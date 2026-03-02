@@ -235,7 +235,7 @@ async function generateRoadmapBatch(
     - Grade: ${params.grade}
     - Subjects: ${params.subjectsStr}
     
-    **CRITICAL:** Use your search tool to find the official NIE syllabus for the specified grade and subjects to ensure the topics and their sequence are 100% accurate. Base the roadmap STRICTLY on the official curriculum.
+    **CRITICAL:** Use your search tool to find the official NIE (National Institute of Education Sri Lanka - nie.lk) syllabus for the specified grade and subjects to ensure the topics and their sequence are 100% accurate. Base the roadmap STRICTLY on the official curriculum.
     
     ${params.examContextInstruction}
 
@@ -602,7 +602,7 @@ export const generateQuiz = async (
     
     CRITICAL INSTRUCTIONS TO PREVENT ERRORS:
     1. NEVER invent or hallucinate facts. All questions and answers MUST be 100% factually accurate.
-    2. Ensure questions are highly relevant to the Sri Lankan local curriculum.
+    2. Ensure questions are highly relevant to the Sri Lankan local curriculum (NIE - nie.lk).
     3. If the exact local syllabus detail is unknown, use universally accepted, accurate core concepts for this grade level.
     4. Output JSON only.
   `;
@@ -719,7 +719,7 @@ export const generateFlashcards = async (
       
       CRITICAL INSTRUCTIONS TO PREVENT ERRORS:
       1. NEVER invent or hallucinate facts. All definitions MUST be 100% factually accurate.
-      2. Ensure the content is highly relevant to the Sri Lankan local curriculum.
+      2. Ensure the content is highly relevant to the Sri Lankan local curriculum (NIE - nie.lk).
       3. If the exact local syllabus detail is unknown, use universally accepted, accurate core concepts for this grade level.
       4. Output JSON only.
     `;
@@ -773,11 +773,11 @@ export const generateSyllabusList = async (grade: string, subject: string, langu
       Your task is to list the exact syllabus units for:
       Grade: ${grade}
       Subject: ${subject}
-      Country: Sri Lanka (NIE Syllabus)
+      Country: Sri Lanka (NIE Syllabus - nie.lk)
       Language: ${language === 'si' ? 'Sinhala' : 'English'}
       
       CRITICAL INSTRUCTIONS:
-      1. Provide the exact, official unit names as per the Sri Lankan local syllabus.
+      1. Provide the exact, official unit names as per the Sri Lankan local syllabus (National Institute of Education).
       2. Do not invent units. If you are unsure, provide the most standard topics for this grade and subject in Sri Lanka.
       3. Return a JSON String Array ONLY. Do not include any markdown formatting.
       
