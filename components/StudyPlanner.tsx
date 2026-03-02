@@ -338,36 +338,40 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
     }
   }[language];
 
-  const examTargets = [
-    { id: 'O/L', label: t.ol },
-    { id: 'Term Test', label: t.termTest },
-    { id: 'A/L', label: t.al },
-    { id: 'O/L & Term Tests', label: t.olAndTerm },
-    { id: 'A/L & Term Tests', label: t.alAndTerm }
+  const grades = [
+    "6 ශ්‍රේණිය (Grade 6)", "7 ශ්‍රේණිය (Grade 7)", "8 ශ්‍රේණිය (Grade 8)", 
+    "9 ශ්‍රේණිය (Grade 9)", "10 ශ්‍රේණිය (Grade 10)", "11 ශ්‍රේණිය (Grade 11)",
+    "12 ශ්‍රේණිය (Grade 12)", "13 ශ්‍රේණිය (Grade 13)"
   ];
 
-  const getAvailableGrades = () => {
-    if (examTarget.includes('O/L')) {
-      return ["10 ශ්‍රේණිය (Grade 10)", "11 ශ්‍රේණිය (Grade 11)"];
-    } else if (examTarget.includes('A/L')) {
-      return ["12 ශ්‍රේණිය (Grade 12)", "13 ශ්‍රේණිය (Grade 13)"];
+  const getAvailableExamTargets = () => {
+    if (grade.includes('10') || grade.includes('11')) {
+      return [
+        { id: 'O/L', label: t.ol },
+        { id: 'Term Test', label: t.termTest },
+        { id: 'O/L & Term Tests', label: t.olAndTerm }
+      ];
+    } else if (grade.includes('12') || grade.includes('13')) {
+      return [
+        { id: 'A/L', label: t.al },
+        { id: 'Term Test', label: t.termTest },
+        { id: 'A/L & Term Tests', label: t.alAndTerm }
+      ];
     } else {
       return [
-        "6 ශ්‍රේණිය (Grade 6)", "7 ශ්‍රේණිය (Grade 7)", "8 ශ්‍රේණිය (Grade 8)", 
-        "9 ශ්‍රේණිය (Grade 9)", "10 ශ්‍රේණිය (Grade 10)", "11 ශ්‍රේණිය (Grade 11)",
-        "12 ශ්‍රේණිය (Grade 12)", "13 ශ්‍රේණිය (Grade 13)"
+        { id: 'Term Test', label: t.termTest }
       ];
     }
   };
 
-  const grades = getAvailableGrades();
+  const examTargets = getAvailableExamTargets();
 
-  // Ensure selected grade is valid for the current exam target
+  // Ensure selected exam target is valid for the current grade
   useEffect(() => {
-    if (!grades.includes(grade)) {
-      setGrade(grades[0]);
+    if (!examTargets.some(target => target.id === examTarget)) {
+      setExamTarget(examTargets[0].id);
     }
-  }, [examTarget, grades, grade]);
+  }, [grade, examTargets, examTarget]);
 
   const restDayOptions = [
     { val: 'None', label: t.restDayNone },
@@ -543,28 +547,6 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
           </div>
           
           <div className="space-y-4">
-            {/* Exam Target Selection */}
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{t.examTargetLabel}</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                  <Target className="h-3.5 w-3.5 text-indigo-400" />
-                </div>
-                <select
-                  value={examTarget}
-                  onChange={(e) => setExamTarget(e.target.value)}
-                  className="w-full pl-8 pr-4 py-2 bg-slate-50 border-0 rounded-lg text-sm text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500 transition-all hover:bg-slate-100/80"
-                >
-                  {examTargets.map(target => (
-                    <option key={target.id} value={target.id}>{target.label}</option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
-                   <span className="text-slate-400 text-[10px]">▼</span>
-                </div>
-              </div>
-            </div>
-
             {/* Grade Selection */}
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">{t.selectGrade}</label>
@@ -579,6 +561,28 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
                 >
                   {grades.map(g => (
                     <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
+                   <span className="text-slate-400 text-[10px]">▼</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Exam Target Selection */}
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{t.examTargetLabel}</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                  <Target className="h-3.5 w-3.5 text-indigo-400" />
+                </div>
+                <select
+                  value={examTarget}
+                  onChange={(e) => setExamTarget(e.target.value)}
+                  className="w-full pl-8 pr-4 py-2 bg-slate-50 border-0 rounded-lg text-sm text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500 transition-all hover:bg-slate-100/80"
+                >
+                  {examTargets.map(target => (
+                    <option key={target.id} value={target.id}>{target.label}</option>
                   ))}
                 </select>
                 <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">

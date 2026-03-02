@@ -6,10 +6,9 @@ import { db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const apiKeys = [
-  process.env.API_KEY,
-  process.env.AGENT_KEY_1,
-  process.env.AGENT_KEY_2,
-  process.env.AGENT_KEY_3
+  "AIzaSyAYHlN_8lD71pvYj5Vbx1Iovh9R-hYcvEw",
+  "AIzaSyDVwFPwFN3aJ-6_FmANpBrFy2Vg1RatznI",
+  "AIzaSyDv6oWMwRJdiTCN1BeKCNkh8QvdYG8pYAs"
 ].filter(Boolean) as string[];
 
 let currentKeyIndex = 0;
@@ -227,15 +226,18 @@ async function generateRoadmapBatch(
     }
 ): Promise<any> {
     const prompt = `
-    You are a Curriculum Expert for Sri Lanka's National Institute of Education (NIE).
+    You are an expert curriculum developer for the National Institute of Education (NIE) in Sri Lanka. 
     Task: Create a **PARTIAL ROADMAP** (${startDateStr} to ${endDateStr}).
     Part ${isFirstBatch ? '1' : '2'} of plan.
     
     Context:
     - Grade: ${params.grade}
     - Subjects: ${params.subjectsStr}
+    - Language: ${params.langContext}
     
-    **CRITICAL:** Use your search tool to find the official NIE (National Institute of Education Sri Lanka - nie.lk) syllabus for the specified grade and subjects to ensure the topics and their sequence are 100% accurate. Base the roadmap STRICTLY on the official curriculum.
+    **CRITICAL RULES:**
+    1. Do NOT invent or guess units. Use the exact Sri Lankan local syllabus.
+    2. Use your search tool to find the official NIE (National Institute of Education Sri Lanka - nie.lk) syllabus for the specified grade and subjects to ensure the topics and their sequence are 100% accurate. Base the roadmap STRICTLY on the official curriculum.
     
     ${params.examContextInstruction}
 
@@ -365,7 +367,8 @@ export const generateStudyPlan = async (
       smoothProgressTo(20);
 
       // --- STRATEGY 1: TRY DATABASE (Firebase -> Local) (0 Credits) ---
-      const dbPlan = await generateFromDB(subjects, grade, routine.examDate, language);
+      // const dbPlan = await generateFromDB(subjects, grade, routine.examDate, language);
+      const dbPlan = null; // Force AI generation as requested by user
       
       if (dbPlan) {
         stopProgressSimulation();
@@ -513,6 +516,7 @@ export const generateWeeklySessions = async (
     const langContext = language === 'si' ? "Sinhala" : "English";
 
     const prompt = `
+        You are an expert curriculum developer for the National Institute of Education (NIE) in Sri Lanka.
         Create DAILY SCHEDULE for **Week ${targetWeek.weekNumber}**.
         Grade: ${grade}
         Goal: ${targetWeek.goal}
@@ -523,7 +527,10 @@ export const generateWeeklySessions = async (
         School End: ${routine.schoolEndTime}
         Bed: ${routine.bedTime}
         
-        Output JSON Array of sessions.
+        **CRITICAL RULES:**
+        1. Do NOT invent or guess topics. Use the exact Sri Lankan local syllabus topics that align with the Goal.
+        2. Output JSON Array of sessions.
+        
         Language: ${langContext}.
     `;
 
