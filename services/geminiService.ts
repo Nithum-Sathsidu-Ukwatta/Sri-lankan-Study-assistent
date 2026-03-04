@@ -368,16 +368,16 @@ export const generateStudyPlan = async (
 
       // --- STRATEGY 1: TRY DATABASE (Firebase -> Local) (0 Credits) ---
       // const dbPlan = await generateFromDB(subjects, grade, routine.examDate, language);
-      const dbPlan = null; // Force AI generation as requested by user
+      const dbPlan: { weeks: any[], tips: string[], isLocal: boolean } | null = null; // Force AI generation as requested by user
       
-      if (dbPlan) {
+      if (dbPlan !== null) {
         stopProgressSimulation();
         updateProgress(100);
         
         const plan: StudyPlan = {
             examDate: routine.examDate,
-            weeks: dbPlan.weeks,
-            tips: dbPlan.tips,
+            weeks: (dbPlan as { weeks: any[], tips: string[], isLocal: boolean }).weeks,
+            tips: (dbPlan as { weeks: any[], tips: string[], isLocal: boolean }).tips,
             sourceUrls: []
         };
         
