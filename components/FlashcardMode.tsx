@@ -131,7 +131,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({ language }) => {
             value={topic}
             onChange={e => setTopic(e.target.value)}
           />
-          <Button onClick={handleGenerate} className="w-full bg-purple-600 hover:bg-purple-700">{t.generate}</Button>
+          <div className="fixed bottom-[100px] left-4 right-4 sm:static z-50 pt-3 pb-3 sm:pt-2 sm:pb-2 bg-white/95 backdrop-blur-md border border-slate-200 sm:border-t sm:border-x-0 sm:border-b-0 sm:border-slate-100 mt-4 sm:-mx-4 px-4 rounded-2xl sm:rounded-none sm:rounded-b-2xl shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.15)] sm:shadow-none">
+            <Button onClick={handleGenerate} className="w-full py-3.5 sm:py-3 font-bold bg-purple-600 hover:bg-purple-700">{t.generate}</Button>
+          </div>
+          
+          {/* Spacer for mobile fixed button */}
+          <div className="h-24 sm:hidden"></div>
         </div>
       </div>
     );

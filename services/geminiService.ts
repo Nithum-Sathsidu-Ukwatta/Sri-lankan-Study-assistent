@@ -21,9 +21,9 @@ function getNextAiClient() {
 }
 
 // --- SMART HYBRID STRATEGY ---
-const MODEL_COMPLEX = "gemini-3-pro-preview";
+const MODEL_COMPLEX = "gemini-2.5-flash";
 // Switched the 'Fast' model to be the primary for standard tasks to save money
-const MODEL_FAST = "gemini-3-flash-preview"; 
+const MODEL_FAST = "gemini-2.5-flash"; 
 
 const CACHE_PREFIX = 'nexus_plan_cache_';
 

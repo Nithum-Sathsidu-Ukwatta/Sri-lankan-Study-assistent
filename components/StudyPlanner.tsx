@@ -826,13 +826,18 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
 
             {error && <p className="text-rose-500 text-xs bg-rose-50 p-2 rounded-lg flex items-center gap-2 border border-rose-100"><div className="w-1 h-1 rounded-full bg-rose-500" />{error}</p>}
 
-            <Button 
-                onClick={handleGenerate} 
-                isLoading={isLoading} 
-                className="w-full py-2.5 rounded-lg text-sm font-semibold shadow shadow-indigo-200 hover:shadow-md transition-all bg-gradient-to-r from-indigo-600 to-purple-600 border-0 mt-1"
-            >
-              {t.generateBtn}
-            </Button>
+            <div className="fixed bottom-[100px] left-4 right-4 sm:static z-50 pt-3 pb-3 sm:pt-2 sm:pb-2 bg-white/95 backdrop-blur-md border border-slate-200 sm:border-t sm:border-x-0 sm:border-b-0 sm:border-slate-100 mt-4 sm:-mx-4 px-4 rounded-2xl sm:rounded-none sm:rounded-b-2xl shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.15)] sm:shadow-none">
+              <Button 
+                  onClick={handleGenerate} 
+                  isLoading={isLoading} 
+                  className="w-full py-3.5 sm:py-3 rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 hover:shadow-xl transition-all bg-gradient-to-r from-indigo-600 to-purple-600 border-0"
+              >
+                {t.generateBtn}
+              </Button>
+            </div>
+            
+            {/* Spacer for mobile fixed button */}
+            <div className="h-24 sm:hidden"></div>
             
             {/* PROGRESS BAR */}
             {isLoading && (

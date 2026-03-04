@@ -66,7 +66,7 @@ async function generateUnitList(grade: string, subject: string, language: string
     
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview", // Use Flash for lists (cheap/fast)
+            model: "gemini-2.5-flash", // Use Flash for lists (cheap/fast)
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
@@ -84,7 +84,7 @@ async function generateContent(grade: string, subject: string, unit: string, lan
     const ai = getNextAI();
     // Alternating models based on key index to balance load further? 
     // For now, let's use Pro for quality content.
-    const model = "gemini-3-pro-preview"; 
+    const model = "gemini-2.5-flash"; 
 
     const prompt = `
       Create a Study Pack for:
