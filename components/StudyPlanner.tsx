@@ -445,8 +445,8 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
       );
       setPlan(generatedPlan);
       saveToStorage(generatedPlan);
-    } catch (err) {
-      setError(t.errorGen);
+    } catch (err: any) {
+      setError(`${t.errorGen} (${err.message || err})`);
       console.error(err);
     } finally {
       setIsLoading(false);

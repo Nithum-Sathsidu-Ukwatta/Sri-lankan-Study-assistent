@@ -19,6 +19,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({ language }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const t = {
     si: {
@@ -59,11 +60,13 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({ language }) => {
     setCards([]);
     setCurrentIndex(0);
     setIsFlipped(false);
+    setError(null);
     try {
       const result = await generateFlashcards(subject, topic, count, grade, language);
       setCards(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setError(e.message || "Failed to generate cards");
     } finally {
       setIsLoading(false);
     }
@@ -131,6 +134,13 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({ language }) => {
             value={topic}
             onChange={e => setTopic(e.target.value)}
           />
+          
+          {error && (
+            <div className="p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100">
+              {error}
+            </div>
+          )}
+
           <div className="fixed bottom-[100px] left-4 right-4 sm:static z-50 pt-3 pb-3 sm:pt-2 sm:pb-2 bg-white/95 backdrop-blur-md border border-slate-200 sm:border-t sm:border-x-0 sm:border-b-0 sm:border-slate-100 mt-4 sm:-mx-4 px-4 rounded-2xl sm:rounded-none sm:rounded-b-2xl shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.15)] sm:shadow-none">
             <Button onClick={handleGenerate} className="w-full py-3.5 sm:py-3 font-bold bg-purple-600 hover:bg-purple-700">{t.generate}</Button>
           </div>

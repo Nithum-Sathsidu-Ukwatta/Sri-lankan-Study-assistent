@@ -110,9 +110,9 @@ export const QuizMode: React.FC<QuizModeProps> = ({ language }) => {
       // Set time: 1 minute per question
       setTimeLeft(qs.length * 60); 
       setQuestions(qs);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert(t.error);
+      alert(`${t.error}\n\nDetails: ${e.message || e}`);
     } finally {
       setIsLoading(false);
     }
