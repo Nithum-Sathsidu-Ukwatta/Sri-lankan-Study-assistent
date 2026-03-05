@@ -31,13 +31,14 @@ const db = getFirestore(app);
 
 // Load Balancing Keys
 const API_KEYS = [
+    process.env.VITE_GEMINI_API_KEY,
     process.env.AGENT_KEY_1,
     process.env.AGENT_KEY_2,
     process.env.AGENT_KEY_3
 ].filter(k => !!k) as string[];
 
 if (API_KEYS.length === 0) {
-    console.error("❌ No AGENT_KEYs found in .env file! Please add AGENT_KEY_1, AGENT_KEY_2, etc.");
+    console.error("❌ No API Keys found in .env file! Please add VITE_GEMINI_API_KEY.");
     (process as any).exit(1);
 }
 

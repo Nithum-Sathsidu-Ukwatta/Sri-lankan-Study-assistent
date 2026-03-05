@@ -6,15 +6,13 @@ import { db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const apiKeys = [
-  "AIzaSyAYHlN_8lD71pvYj5Vbx1Iovh9R-hYcvEw",
-  "AIzaSyDVwFPwFN3aJ-6_FmANpBrFy2Vg1RatznI",
-  "AIzaSyDv6oWMwRJdiTCN1BeKCNkh8QvdYG8pYAs"
+  import.meta.env.VITE_GEMINI_API_KEY
 ].filter(Boolean) as string[];
 
 let currentKeyIndex = 0;
 
 function getNextAiClient() {
-    if (apiKeys.length === 0) throw new Error("No API keys found in environment variables");
+    if (apiKeys.length === 0) throw new Error("No API keys found in environment variables. Please set VITE_GEMINI_API_KEY.");
     const key = apiKeys[currentKeyIndex];
     currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
     return new GoogleGenAI({ apiKey: key });
