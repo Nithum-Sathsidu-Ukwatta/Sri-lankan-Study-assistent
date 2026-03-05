@@ -9,6 +9,7 @@ const apiKeys = [
   import.meta.env.VITE_GEMINI_API_KEY
 ].filter(Boolean) as string[];
 
+console.log("Gemini Service v2.0 - Fixed JSON/Tool Error"); // Version Check
 let currentKeyIndex = 0;
 
 function getNextAiClient() {
