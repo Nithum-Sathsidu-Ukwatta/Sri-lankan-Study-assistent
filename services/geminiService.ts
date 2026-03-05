@@ -314,6 +314,46 @@ async function generateRoadmapBatch(
     };
 }
 
+// --- GLOBAL CACHE FUNCTIONS ---
+
+const createPlanId = (grade: string, subjects: Subject[], examDate: string, language: string) => {
+    const sortedSubjects = subjects.map(s => s.name).sort().join('_');
+    return createDocId(grade, sortedSubjects, examDate, language);
+};
+
+async function getGlobalCachedPlan(grade: string, subjects: Subject[], examDate: string, language: string) {
+    if (!db) return null;
+    try {
+        const planId = createPlanId(grade, subjects, examDate, language);
+        const docRef = doc(db, 'study_plans', planId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            console.log("✅ Found global cached plan in Firestore!");
+            return docSnap.data() as StudyPlan;
+        }
+    } catch (e) {
+        console.warn("Global cache fetch failed", e);
+    }
+    return null;
+}
+
+async function saveGlobalCachedPlan(plan: StudyPlan, grade: string, subjects: Subject[], examDate: string, language: string) {
+    if (!db) return;
+    try {
+        const planId = createPlanId(grade, subjects, examDate, language);
+        const docRef = doc(db, 'study_plans', planId);
+        await setDoc(docRef, {
+            ...plan,
+            createdAt: new Date().toISOString(),
+            grade,
+            subjects: subjects.map(s => s.name),
+            language
+        });
+        console.log("💾 Saved plan to global Firestore cache.");
+    } catch (e) {
+        console.warn("Global cache save failed", e);
+    }
+}
 
 export const generateStudyPlan = async (
   subjects: Subject[],
@@ -364,6 +404,17 @@ export const generateStudyPlan = async (
 
       updateProgress(5);
       smoothProgressTo(20);
+
+      // --- STRATEGY 0: CHECK GLOBAL FIRESTORE CACHE (New Feature) ---
+      // Especially important for Grade 9+ as requested, but applied generally for efficiency
+      const globalPlan = await getGlobalCachedPlan(grade, subjects, routine.examDate, language);
+      if (globalPlan) {
+          stopProgressSimulation();
+          updateProgress(100);
+          // Save to local cache for faster next load
+          try { localStorage.setItem(cacheKey, JSON.stringify(globalPlan)); } catch (e) {}
+          return globalPlan;
+      }
 
       // --- STRATEGY 1: TRY DATABASE (Firebase -> Local) (0 Credits) ---
       // const dbPlan = await generateFromDB(subjects, grade, routine.examDate, language);
@@ -484,6 +535,9 @@ export const generateStudyPlan = async (
         tips: mergedTips,
         sourceUrls: mergedSourceUrls,
       };
+
+      // NEW: Save to Global Firestore Cache
+      await saveGlobalCachedPlan(plan, grade, subjects, routine.examDate, language);
 
       try {
         localStorage.setItem(cacheKey, JSON.stringify(plan));
