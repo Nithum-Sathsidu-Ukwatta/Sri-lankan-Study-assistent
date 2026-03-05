@@ -31,10 +31,7 @@ const db = getFirestore(app);
 
 // Load Balancing Keys
 const API_KEYS = [
-    process.env.VITE_GEMINI_API_KEY,
-    process.env.AGENT_KEY_1,
-    process.env.AGENT_KEY_2,
-    process.env.AGENT_KEY_3
+    process.env.VITE_GEMINI_API_KEY
 ].filter(k => !!k) as string[];
 
 if (API_KEYS.length === 0) {

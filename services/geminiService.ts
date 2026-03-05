@@ -9,6 +9,14 @@ const apiKeys = [
   import.meta.env.VITE_GEMINI_API_KEY
 ].filter(Boolean) as string[];
 
+console.log("Gemini Service Initialized");
+console.log("API Keys loaded:", apiKeys.length);
+if (apiKeys.length > 0) {
+    console.log("First key starts with:", apiKeys[0].substring(0, 8) + "...");
+} else {
+    console.error("No API keys found! VITE_GEMINI_API_KEY is missing.");
+}
+
 let currentKeyIndex = 0;
 
 function getNextAiClient() {
