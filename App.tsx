@@ -188,6 +188,13 @@ const App: React.FC = () => {
       {/* Ad Banner Area */}
       <AdBanner />
 
+      {/* Version Indicator */}
+      <div className="fixed bottom-20 right-4 z-50 pointer-events-none opacity-50">
+        <span className="text-[10px] font-mono text-slate-400 bg-white/80 px-2 py-1 rounded-full border border-slate-200">
+          v2.0 (Fixed)
+        </span>
+      </div>
+
       {/* Mobile Bottom Navigation Bar */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+12px)] z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex justify-between items-center">
         {[
