@@ -9,7 +9,7 @@ const apiKeys = [
   import.meta.env.VITE_GEMINI_API_KEY
 ].filter(Boolean) as string[];
 
-console.log("Gemini Service v2.0 - Fixed JSON/Tool Error"); // Version Check
+console.log("Gemini Service v2.1 - Using gemini-2.5-flash"); // Version Check
 let currentKeyIndex = 0;
 
 function getNextAiClient() {
@@ -20,9 +20,9 @@ function getNextAiClient() {
 }
 
 // --- SMART HYBRID STRATEGY ---
-const MODEL_COMPLEX = "gemini-1.5-flash";
+const MODEL_COMPLEX = "gemini-2.5-flash";
 // Switched the 'Fast' model to be the primary for standard tasks to save money
-const MODEL_FAST = "gemini-1.5-flash"; 
+const MODEL_FAST = "gemini-2.5-flash"; 
 
 const CACHE_PREFIX = 'nexus_plan_cache_';
 

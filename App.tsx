@@ -191,7 +191,7 @@ const App: React.FC = () => {
       {/* Version Indicator */}
       <div className="fixed bottom-20 right-4 z-50 pointer-events-none opacity-50">
         <span className="text-[10px] font-mono text-slate-400 bg-white/80 px-2 py-1 rounded-full border border-slate-200">
-          v2.0 (Fixed)
+          v2.1 (Gemini 2.5)
         </span>
       </div>
 
