@@ -7,14 +7,16 @@ import { doc, getDoc, setDoc, collection, addDoc, serverTimestamp, increment } f
 import Tesseract from 'tesseract.js';
 
 const apiKeys = [
-  process.env.GEMINI_API_KEY
+  process.env.GEMINI_API_KEY,
+  process.env.API_KEY,
+  import.meta.env?.VITE_GEMINI_API_KEY
 ].filter(Boolean) as string[];
 
 console.log("Gemini Service v2.2 - Production Update"); // Version Check
 let currentKeyIndex = 0;
 
 function getNextAiClient() {
-    if (apiKeys.length === 0) throw new Error("No API keys found in environment variables. Please set GEMINI_API_KEY.");
+    if (apiKeys.length === 0) throw new Error("API key is missing. Please set GEMINI_API_KEY or VITE_GEMINI_API_KEY.");
     const key = apiKeys[currentKeyIndex];
     currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
     return new GoogleGenAI({ apiKey: key });
