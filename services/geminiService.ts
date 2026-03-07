@@ -3,17 +3,18 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Subject, StudyPlan, QuizQuestion, Language, BusySlot, UserRoutine, WeeklySchedule, Flashcard } from '../types';
 import { SYLLABUS_DB, normalizeSubject, SyllabusUnit, GradeSyllabus } from '../data/syllabusDatabase';
 import { db } from './firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore';
+import Tesseract from 'tesseract.js';
 
 const apiKeys = [
-  import.meta.env.VITE_GEMINI_API_KEY
+  process.env.GEMINI_API_KEY
 ].filter(Boolean) as string[];
 
-console.log("Gemini Service v2.1 - Using gemini-2.5-flash"); // Version Check
+console.log("Gemini Service v2.2 - Production Update"); // Version Check
 let currentKeyIndex = 0;
 
 function getNextAiClient() {
-    if (apiKeys.length === 0) throw new Error("No API keys found in environment variables. Please set VITE_GEMINI_API_KEY.");
+    if (apiKeys.length === 0) throw new Error("No API keys found in environment variables. Please set GEMINI_API_KEY.");
     const key = apiKeys[currentKeyIndex];
     currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
     return new GoogleGenAI({ apiKey: key });
@@ -49,6 +50,210 @@ export const createDocId = (...parts: string[]) => {
     return parts
         .map(p => p.toLowerCase().trim().replace(/[^a-z0-9\u0D80-\u0DFF]+/gi, '_')) // Supports Sinhala chars + alphanumeric
         .join('__');
+};
+
+// --- OCR & CAMERA SOLVER ---
+
+// Normalize text for hashing (strip whitespace, lower case)
+const normalizeText = (text: string) => {
+    return text.replace(/\s+/g, ' ').trim().toLowerCase();
+};
+
+// Simple hash function for text
+const getTextHash = async (text: string) => {
+    const msgBuffer = new TextEncoder().encode(normalizeText(text));
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+// Fallback OCR using Tesseract.js
+const performFallbackOCR = async (imageUrl: string): Promise<{ text: string, confidence: number }> => {
+    try {
+        const result = await Tesseract.recognize(imageUrl, 'eng+sin', {
+            logger: m => console.log(m)
+        });
+        return { text: result.data.text, confidence: result.data.confidence / 100 };
+    } catch (e) {
+        console.error("Fallback OCR failed", e);
+        return { text: "", confidence: 0 };
+    }
+};
+
+// Usage Accounting
+const incrementUsage = async (userId: string, actionType: string) => {
+    if (!db) return;
+    const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const userRef = doc(db, 'users', userId, 'usage', monthKey);
+    const globalRef = doc(db, 'usage_monthly', monthKey);
+
+    try {
+        // Use setDoc with merge: true for atomic increments
+        await setDoc(userRef, { [actionType]: increment(1) }, { merge: true });
+        await setDoc(globalRef, { total_actions: increment(1) }, { merge: true });
+    } catch (e) {
+        console.error("Usage increment failed", e);
+    }
+};
+
+// Check Rate Limit
+const checkRateLimit = async (userId: string, actionType: string): Promise<boolean> => {
+    if (!db) return true; // Fail open if DB issue
+    const today = new Date().toISOString().split('T')[0];
+    const usageRef = doc(db, 'users', userId, 'daily_usage', today);
+    
+    try {
+        const docSnap = await getDoc(usageRef);
+        if (!docSnap.exists()) return true;
+        
+        const count = docSnap.data()[actionType] || 0;
+        const limit = actionType === 'camera_solve' ? 10 : 50; // Free tier limits
+        
+        return count < limit;
+    } catch (e) {
+        return true;
+    }
+};
+
+export const solveImage = async (imageUrl: string, userId: string, language: Language) => {
+    // 1. Rate Limit
+    if (!(await checkRateLimit(userId, 'camera_solve'))) {
+        throw new Error("Daily limit exceeded");
+    }
+
+    // 2. OCR (Primary - Gemini Vision)
+    const ai = getNextAiClient();
+    let text = "";
+    let ocrConfidence = 0;
+
+    try {
+        // Fetch image and convert to base64
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+        });
+        const base64Data = base64.split(',')[1];
+
+        const visionResp = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [
+                { inlineData: { mimeType: "image/jpeg", data: base64Data } },
+                { text: "Extract all text from this image exactly as is." }
+            ]
+        });
+        text = visionResp.text || "";
+        ocrConfidence = 0.9; // Gemini doesn't give confidence, assume high if successful
+    } catch (e) {
+        console.warn("Primary OCR failed", e);
+        ocrConfidence = 0;
+    }
+
+    // 3. Fallback OCR
+    if (ocrConfidence < 0.8 || !text) {
+        const fallback = await performFallbackOCR(imageUrl);
+        if (fallback.confidence > ocrConfidence) {
+            text = fallback.text;
+            ocrConfidence = fallback.confidence;
+        }
+    }
+
+    if (!text) throw new Error("Could not read text from image");
+
+    // 4. Cache Check
+    const textHash = await getTextHash(text);
+    if (db) {
+        const cachedRef = doc(db, 'cached_answers', textHash);
+        const cachedSnap = await getDoc(cachedRef);
+        if (cachedSnap.exists()) {
+            await incrementUsage(userId, 'camera_solve_cache');
+            return cachedSnap.data();
+        }
+    }
+
+    // 5. RAG & Generation (Simplified RAG for this snippet)
+    // In a full implementation, we would query a vector DB here.
+    // For now, we'll use the text directly.
+    
+    const learningModeSnap = db ? await getDoc(doc(db, 'config', 'learning_mode')) : null;
+    const learningMode = learningModeSnap?.exists() ? learningModeSnap.data().enabled : false;
+
+    const prompt = `
+        SYSTEM: You are an expert tutor. Use the provided text to answer the student's question.
+        - If "learning_mode" is TRUE (${learningMode}), provide guided steps, NOT the final answer.
+        - Output MUST be valid JSON.
+        - Language: ${language === 'si' ? 'Sinhala' : 'English'}
+
+        QUESTION TEXT:
+        ${text}
+
+        OUTPUT JSON SCHEMA:
+        {
+          "answer_steps": ["step 1", "step 2"],
+          "final_answer": "string",
+          "rubric": ["point 1", "point 2"],
+          "confidence": 0.0 to 1.0,
+          "sources": ["syllabus_context_if_available"]
+        }
+    `;
+
+    const genResp = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+    });
+
+    const answerJson = JSON.parse(genResp.text || "{}");
+    answerJson.ocr_confidence = ocrConfidence;
+    answerJson.sources = answerJson.sources || ["no syllabus context used"];
+
+    // 6. Verification (Self-Correction)
+    const verifyPrompt = `
+        SYSTEM: Verify the generated answer against the question.
+        - Check for hallucinations.
+        - Output JSON.
+
+        QUESTION: ${text}
+        GENERATED: ${JSON.stringify(answerJson)}
+
+        OUTPUT JSON SCHEMA:
+        {
+          "verified": boolean,
+          "confidence": 0.0 to 1.0,
+          "issues": ["issue 1"]
+        }
+    `;
+    
+    const verifyResp = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: verifyPrompt,
+        config: { responseMimeType: "application/json" }
+    });
+    const verifyJson = JSON.parse(verifyResp.text || "{}");
+
+    answerJson.verified = verifyJson.verified;
+    answerJson.confidence = verifyJson.confidence;
+
+    // 7. Routing & Storage
+    if (db) {
+        if (!answerJson.verified || ocrConfidence < 0.70) {
+            await addDoc(collection(db, 'verification_queue'), {
+                question: text,
+                answer: answerJson,
+                ocr_conf: ocrConfidence,
+                ver_conf: verifyJson.confidence,
+                status: 'pending',
+                createdAt: serverTimestamp()
+            });
+        }
+
+        await setDoc(doc(db, 'cached_answers', textHash), answerJson);
+        await incrementUsage(userId, 'camera_solve');
+    }
+
+    return answerJson;
 };
 
 async function executeWithKeyRotation(model: string, params: any) {
@@ -244,6 +449,7 @@ async function generateRoadmapBatch(
     1. **Accuracy:** Use search results for the syllabus. Do not guess.
     2. **Sequence:** Follow the official textbook/syllabus order precisely.
     3. **Start:** Begin at Week ${startWeekNumber}.
+    4. **Goal Format:** The 'goal' field MUST be formatted as "Subject: Topic | Subject: Topic". Example: "History: Unit 1 - Kings | Science: Unit 1 - Plants".
     
     **TOKEN SAVING:**
     1. Output JSON only. No explanations.
@@ -352,6 +558,66 @@ async function saveGlobalCachedPlan(plan: StudyPlan, grade: string, subjects: Su
         console.log("💾 Saved plan to global Firestore cache.");
     } catch (e) {
         console.warn("Global cache save failed", e);
+    }
+}
+
+// --- SYLLABUS EXTRACTION & AUTO-SAVE ---
+async function extractAndSaveSyllabus(
+    weeks: any[], 
+    grade: string, 
+    language: string,
+    allSubjects: Subject[]
+) {
+    if (!db) return;
+    
+    const extractedSyllabi: Record<string, Set<string>> = {};
+    
+    // Initialize sets
+    allSubjects.forEach(s => extractedSyllabi[s.name] = new Set());
+
+    weeks.forEach(week => {
+        if (!week.goal) return;
+        // Expected format: "History: Unit 1 | Science: Unit 2"
+        const parts = week.goal.split('|');
+        parts.forEach((part: string) => {
+            const colonIndex = part.indexOf(':');
+            if (colonIndex > -1) {
+                const subjectName = part.substring(0, colonIndex).trim();
+                const topic = part.substring(colonIndex + 1).trim();
+                
+                // Fuzzy match subject
+                const matchedSubject = allSubjects.find(s => 
+                    s.name.toLowerCase() === subjectName.toLowerCase() ||
+                    subjectName.toLowerCase().includes(s.name.toLowerCase())
+                );
+
+                if (matchedSubject) {
+                    extractedSyllabi[matchedSubject.name].add(topic);
+                }
+            }
+        });
+    });
+
+    const safeGrade = createDocId(grade);
+    
+    for (const subject of allSubjects) {
+        const topics = Array.from(extractedSyllabi[subject.name] || []);
+        if (topics.length > 0) {
+            const safeSubject = createDocId(normalizeSubject(subject.name));
+            const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'syllabus', 'main');
+            
+            try {
+                // Only save if it doesn't exist to prevent overwriting full syllabi with partials
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                     const units = topics.map(t => ({ unit: t }));
+                     await setDoc(docRef, { units, updatedAt: new Date().toISOString(), source: 'auto-extracted' });
+                     console.log(`💾 Auto-saved extracted syllabus for ${subject.name}`);
+                }
+            } catch (e) {
+                console.warn("Auto-save syllabus failed", e);
+            }
+        }
     }
 }
 
@@ -539,6 +805,9 @@ export const generateStudyPlan = async (
       // NEW: Save to Global Firestore Cache
       await saveGlobalCachedPlan(plan, grade, subjects, routine.examDate, language);
 
+      // NEW: Extract and Save Syllabus Units for future "Strategy 1" usage
+      await extractAndSaveSyllabus(mergedWeeks, grade, language, subjects);
+
       try {
         localStorage.setItem(cacheKey, JSON.stringify(plan));
       } catch (e) {
@@ -552,6 +821,8 @@ export const generateStudyPlan = async (
   }
 };
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 // Lazy load week details - Still uses Flash to be cheap
 export const generateWeeklySessions = async (
     targetWeek: WeeklySchedule,
@@ -564,6 +835,9 @@ export const generateWeeklySessions = async (
     restDay: string
 ): Promise<any[]> => {
     if (apiKeys.length === 0) throw new Error("API Key is missing");
+
+    // Add a small delay to prevent rate limiting when users click fast
+    await sleep(1000);
 
     const busySlotsStr = busySlots.map(b => `${b.day}: ${b.startTime}-${b.endTime}`).join(', ');
     const langContext = language === 'si' ? "Sinhala" : "English";
@@ -583,6 +857,7 @@ export const generateWeeklySessions = async (
         **CRITICAL RULES:**
         1. Do NOT invent or guess topics. Use the exact Sri Lankan local syllabus topics that align with the Goal.
         2. Output JSON Array of sessions.
+        3. **Day Names:** Use standard English day names (Monday, Tuesday, etc.) or standard Sinhala day names (සඳුදා, අඟහරුවාදා, etc.) exactly as they appear in a calendar.
         
         Language: ${langContext}.
     `;

@@ -1,20 +1,21 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Subject, Difficulty, StudyPlan, Language, BusySlot, WeeklySchedule } from '../types';
-import { generateStudyPlan, generateWeeklySessions } from '../services/geminiService';
-import { Plus, Calendar, Clock, BookOpen, Activity, GraduationCap, Target, Sparkles, X, Link as LinkIcon, Briefcase, Moon, Home, ChevronDown, ChevronRight, Flag, Coffee, Loader2, Save, Trash2, CheckSquare, Zap, Lock, PlayCircle, Coins, Lightbulb } from 'lucide-react';
+import { generateStudyPlan, generateWeeklySessions, solveImage } from '../services/geminiService';
+import { Plus, Calendar, Clock, BookOpen, Activity, GraduationCap, Target, Sparkles, X, Link as LinkIcon, Briefcase, Moon, Home, ChevronDown, ChevronRight, ChevronLeft, Flag, Coffee, Loader2, Save, Trash2, CheckSquare, Zap, Lock, PlayCircle, Coins, Lightbulb, Camera, Upload, AlertTriangle } from 'lucide-react';
 import { Button } from './ui/Button';
 
 interface StudyPlannerProps {
   language: Language;
   points: number;
   spendPoints: (amount: number) => void;
+  userId?: string; // Add userId prop
 }
 
 const STORAGE_KEY = 'nexus_study_plan_v1';
 const STREAK_KEY = 'nexus_study_streak';
 
-export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, spendPoints }) => {
+export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, spendPoints, userId = 'guest' }) => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [newSubject, setNewSubject] = useState('');
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.Medium);
@@ -22,7 +23,18 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
   const [grade, setGrade] = useState('10 ශ්‍රේණිය (Grade 10)');
   const [examTarget, setExamTarget] = useState('O/L');
   const [focus, setFocus] = useState('');
+  const [currentStep, setCurrentStep] = useState(0);
   
+  // Camera Solver State
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraImage, setCameraImage] = useState<string | null>(null);
+  const [isSolving, setIsSolving] = useState(false);
+  const [solution, setSolution] = useState<any | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const nextStep = () => setCurrentStep(prev => Math.min(prev + 1, 3));
+  const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 0));
+
   // Routine State
   const [schoolEndTime, setSchoolEndTime] = useState('14:30');
   const [bedTime, setBedTime] = useState('22:00');
@@ -56,6 +68,32 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
   const [progress, setProgress] = useState(0); // Progress State
   const [plan, setPlan] = useState<StudyPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Camera Solver Handlers
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setCameraImage(reader.result as string);
+            setSolution(null);
+        };
+        reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSolve = async () => {
+    if (!cameraImage) return;
+    setIsSolving(true);
+    try {
+        const result = await solveImage(cameraImage, userId, language);
+        setSolution(result);
+    } catch (e: any) {
+        setError(e.message || "Failed to solve image");
+    } finally {
+        setIsSolving(false);
+    }
+  };
 
   // Load from local storage on mount
   useEffect(() => {
@@ -218,6 +256,7 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
         setExpandedWeekIndex(0);
         setStreak(0);
         localStorage.removeItem(STREAK_KEY);
+        setCurrentStep(0);
     }
   };
 
@@ -277,7 +316,13 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
       unlockDesc: "ලකුණු භාවිතා කරන්න හෝ දැන්වීමක් නරඹන්න.",
       watchAd: "දැන්වීම නරඹා විවෘත කරන්න",
       unlockWithPoints: "ලකුණු 50 කින් විවෘත කරන්න",
-      locked: "අගුළු දමා ඇත"
+      locked: "අගුළු දමා ඇත",
+      cameraTitle: "කැමරා විසඳුම",
+      cameraDesc: "ප්‍රශ්නයක ඡායාරූපයක් ගෙන ක්ෂණික විසඳුමක් ලබා ගන්න",
+      solveBtn: "විසඳන්න",
+      uploadBtn: "ඡායාරූපයක් තෝරන්න",
+      subjects: "විෂයයන්",
+      hoursPerDay: "දිනකට පැය ගණන",
     },
     en: {
       title: "Study Plan",
@@ -334,7 +379,13 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
       unlockDesc: "Use points or watch a short ad to unlock.",
       watchAd: "Watch Ad & Unlock",
       unlockWithPoints: "Unlock with 50 Points",
-      locked: "Locked"
+      locked: "Locked",
+      cameraTitle: "Camera Solver",
+      cameraDesc: "Take a photo of a question to get an instant solution",
+      solveBtn: "Solve",
+      uploadBtn: "Upload Photo",
+      subjects: "Subjects",
+      hoursPerDay: "Hours Per Day",
     }
   }[language];
 
@@ -345,13 +396,13 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
   ];
 
   const getAvailableExamTargets = () => {
-    if (grade.includes('10') || grade.includes('11')) {
+    if (grade?.includes('10') || grade?.includes('11')) {
       return [
         { id: 'O/L', label: t.ol },
         { id: 'Term Test', label: t.termTest },
         { id: 'O/L & Term Tests', label: t.olAndTerm }
       ];
-    } else if (grade.includes('12') || grade.includes('13')) {
+    } else if (grade?.includes('12') || grade?.includes('13')) {
       return [
         { id: 'A/L', label: t.al },
         { id: 'Term Test', label: t.termTest },
@@ -495,7 +546,142 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-20 lg:pb-0">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 animate-fade-in">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
+            <div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200">
+                <Calendar className="w-8 h-8 text-white" />
+            </div>
+            {t.title}
+          </h1>
+          <p className="text-slate-500 mt-2 text-sm md:text-base max-w-2xl">
+            {t.subtitle}
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-3">
+            <div className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2">
+                <Coins className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                <span className="font-bold text-slate-700">{points}</span>
+            </div>
+            <Button onClick={() => setShowCamera(true)} variant="secondary" className="gap-2">
+                <Camera className="w-4 h-4" />
+                {t.cameraTitle}
+            </Button>
+        </div>
+      </div>
+
+      {/* Camera Solver Modal */}
+      {showCamera && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 className="font-bold text-lg flex items-center gap-2 text-slate-800">
+                        <Camera className="w-5 h-5 text-indigo-600" />
+                        {t.cameraTitle}
+                    </h3>
+                    <button onClick={() => setShowCamera(false)} className="p-1 hover:bg-slate-200 rounded-full transition-colors">
+                        <X className="w-5 h-5 text-slate-500" />
+                    </button>
+                </div>
+                
+                <div className="p-6 overflow-y-auto">
+                    {!solution ? (
+                        <div className="space-y-6">
+                            <div 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 transition-all group"
+                            >
+                                {cameraImage ? (
+                                    <img src={cameraImage} alt="Preview" className="max-h-64 rounded-lg shadow-md" />
+                                ) : (
+                                    <>
+                                        <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                            <Upload className="w-8 h-8 text-indigo-600" />
+                                        </div>
+                                        <p className="text-sm font-medium text-slate-600">{t.uploadBtn}</p>
+                                        <p className="text-xs text-slate-400 mt-1">JPG, PNG supported</p>
+                                    </>
+                                )}
+                                <input 
+                                    type="file" 
+                                    ref={fileInputRef} 
+                                    className="hidden" 
+                                    accept="image/*" 
+                                    onChange={handleImageUpload}
+                                />
+                            </div>
+
+                            {cameraImage && (
+                                <Button 
+                                    onClick={handleSolve} 
+                                    isLoading={isSolving} 
+                                    className="w-full py-3 text-base font-bold shadow-lg shadow-indigo-200"
+                                >
+                                    {t.solveBtn}
+                                </Button>
+                            )}
+                            
+                            {error && (
+                                <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg flex items-center gap-2 text-rose-600 text-sm">
+                                    <AlertTriangle className="w-4 h-4" />
+                                    {error}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="space-y-6 animate-fade-in">
+                            <div className="flex items-center justify-between">
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${solution.verified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    {solution.verified ? 'Verified' : 'Pending Verification'}
+                                </span>
+                                <span className="text-xs text-slate-400">Confidence: {Math.round(solution.confidence * 100)}%</span>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <h4 className="text-sm font-bold text-slate-700 mb-2">Steps</h4>
+                                    <div className="space-y-2">
+                                        {solution.answer_steps.map((step: string, i: number) => (
+                                            <div key={i} className="p-3 bg-slate-50 rounded-lg text-sm text-slate-700 border border-slate-100">
+                                                <span className="font-bold text-indigo-600 mr-2">{i + 1}.</span>
+                                                {step}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                                    <h4 className="text-xs font-bold text-indigo-800 uppercase tracking-wider mb-1">Final Answer</h4>
+                                    <p className="text-lg font-bold text-indigo-900">{solution.final_answer}</p>
+                                </div>
+                                
+                                {solution.rubric && (
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Rubric</h4>
+                                        <ul className="list-disc pl-4 space-y-1">
+                                            {solution.rubric.map((point: string, i: number) => (
+                                                <li key={i} className="text-xs text-slate-600">{point}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <Button onClick={() => { setSolution(null); setCameraImage(null); }} variant="secondary" className="w-full">
+                                Solve Another
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
+
+      <div className="pb-20 lg:pb-0">
       
       {/* UNLOCK MODAL */}
       {showUnlockModal && (
@@ -536,349 +722,260 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
       )}
 
       {/* Input Section */}
-      <div className="lg:col-span-4">
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-          <div className="mb-2">
-            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              {t.title}
-            </h2>
-            <p className="text-[11px] text-slate-400">{t.subtitle}</p>
+      {/* Wizard Section */}
+      {!plan && (
+        <div className="max-w-xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in">
+          {/* Wizard Header */}
+          <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+             <h2 className="font-bold text-slate-700 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                {currentStep === 0 ? t.selectGrade : currentStep === 1 ? t.subjects : currentStep === 2 ? t.routineTitle : "Review"}
+             </h2>
+             <span className="text-xs font-medium text-slate-400">Step {currentStep + 1}/4</span>
           </div>
           
-          <div className="space-y-4">
-            {/* Grade Selection */}
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{t.selectGrade}</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                  <GraduationCap className="h-3.5 w-3.5 text-indigo-400" />
-                </div>
-                <select
-                  value={grade}
-                  onChange={(e) => setGrade(e.target.value)}
-                  className="w-full pl-8 pr-4 py-2 bg-slate-50 border-0 rounded-lg text-sm text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500 transition-all hover:bg-slate-100/80"
-                >
-                  {grades.map(g => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
-                   <span className="text-slate-400 text-[10px]">▼</span>
-                </div>
-              </div>
-            </div>
+          {/* Progress Bar */}
+          <div className="w-full bg-slate-100 h-1">
+             <div className="bg-indigo-600 h-1 transition-all duration-500 ease-out" style={{ width: `${(currentStep + 1) * 25}%` }} />
+          </div>
 
-            {/* Exam Target Selection */}
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{t.examTargetLabel}</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                  <Target className="h-3.5 w-3.5 text-indigo-400" />
-                </div>
-                <select
-                  value={examTarget}
-                  onChange={(e) => setExamTarget(e.target.value)}
-                  className="w-full pl-8 pr-4 py-2 bg-slate-50 border-0 rounded-lg text-sm text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500 transition-all hover:bg-slate-100/80"
-                >
-                  {examTargets.map(target => (
-                    <option key={target.id} value={target.id}>{target.label}</option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
-                   <span className="text-slate-400 text-[10px]">▼</span>
-                </div>
-              </div>
-            </div>
+          <div className="p-6 space-y-6">
+             {/* STEP 0: Grade & Target */}
+             {currentStep === 0 && (
+                <div className="space-y-6 animate-fade-in">
+                   {/* Grade Selection */}
+                   <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-2">{t.selectGrade}</label>
+                     <div className="relative">
+                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                         <GraduationCap className="h-5 w-5 text-indigo-400" />
+                       </div>
+                       <select
+                         value={grade}
+                         onChange={(e) => setGrade(e.target.value)}
+                         className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                       >
+                         {grades.map(g => (
+                           <option key={g} value={g}>{g}</option>
+                         ))}
+                       </select>
+                     </div>
+                   </div>
 
-            {/* Routine Section */}
-            <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                <label className="text-xs font-bold text-slate-700">{t.routineTitle}</label>
-              </div>
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <div>
-                   <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1">
-                      <Home className="w-3 h-3" /> {t.schoolEnd}
-                   </label>
-                   <input 
-                     type="time" 
-                     value={schoolEndTime}
-                     onChange={(e) => setSchoolEndTime(e.target.value)}
-                     className="w-full p-1.5 text-xs rounded border border-slate-200 focus:ring-1 focus:ring-indigo-500"
-                   />
+                   {/* Exam Target Selection */}
+                   <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-2">{t.examTargetLabel}</label>
+                     <div className="relative">
+                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                         <Target className="h-5 w-5 text-indigo-400" />
+                       </div>
+                       <select
+                         value={examTarget}
+                         onChange={(e) => setExamTarget(e.target.value)}
+                         className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                       >
+                         {getAvailableExamTargets().map(target => (
+                           <option key={target.id} value={target.id}>{target.label}</option>
+                         ))}
+                       </select>
+                     </div>
+                   </div>
                 </div>
-                <div>
-                   <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1">
-                      <Moon className="w-3 h-3" /> {t.bedTime}
-                   </label>
-                   <input 
-                     type="time" 
-                     value={bedTime}
-                     onChange={(e) => setBedTime(e.target.value)}
-                     className="w-full p-1.5 text-xs rounded border border-slate-200 focus:ring-1 focus:ring-indigo-500"
-                   />
-                </div>
-                <div>
-                   <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1">
-                      <Target className="w-3 h-3" /> {t.examDate}
-                   </label>
-                   <input 
-                     type="date" 
-                     value={examDate}
-                     onChange={(e) => setExamDate(e.target.value)}
-                     className="w-full p-1.5 text-xs rounded border border-slate-200 focus:ring-1 focus:ring-indigo-500"
-                   />
-                </div>
-                <div>
-                   <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1">
-                      <Coffee className="w-3 h-3" /> {t.restDay}
-                   </label>
-                   <select 
-                     value={restDay}
-                     onChange={(e) => setRestDay(e.target.value)}
-                     className="w-full p-1.5 text-xs rounded border border-slate-200 focus:ring-1 focus:ring-indigo-500"
-                   >
-                     {restDayOptions.map(opt => (
-                       <option key={opt.val} value={opt.val}>{opt.label}</option>
-                     ))}
-                   </select>
-                </div>
-              </div>
-            </div>
+             )}
 
-            <hr className="border-slate-100" />
-
-            {/* Subject Input */}
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{t.enterSubject}</label>
-              <div className="flex flex-col gap-2">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                    <BookOpen className="h-3.5 w-3.5 text-indigo-400" />
-                  </div>
-                  <input
-                    type="text"
-                    value={newSubject}
-                    onChange={(e) => setNewSubject(e.target.value)}
-                    placeholder={t.subjectPlaceholder}
-                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border-0 rounded-lg text-sm text-slate-700 placeholder-slate-400 focus:ring-1 focus:ring-indigo-500 transition-all hover:bg-slate-100/80"
-                    onKeyDown={(e) => e.key === 'Enter' && addSubject()}
-                  />
-                </div>
-                
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                     <select
-                      value={difficulty}
-                      onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-                      className="w-full pl-8 pr-6 py-2 bg-slate-50 border-0 rounded-lg text-xs font-medium text-slate-600 focus:ring-1 focus:ring-indigo-500 appearance-none hover:bg-slate-100/80"
-                    >
-                      <option value={Difficulty.Easy}>{t.easy}</option>
-                      <option value={Difficulty.Medium}>{t.medium}</option>
-                      <option value={Difficulty.Hard}>{t.hard}</option>
-                    </select>
-                    <Activity className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-indigo-400 pointer-events-none" />
-                  </div>
-                  
-                  <Button onClick={addSubject} className="aspect-square !p-0 w-[36px] h-[36px] rounded-lg flex items-center justify-center shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            {/* Tags Display */}
-            {subjects.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50/50 rounded-lg border border-slate-100/50 min-h-[40px]">
-                {subjects.map(sub => (
-                  <span key={sub.id} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
-                    sub.difficulty === Difficulty.Hard ? 'bg-white text-rose-600 border-rose-100' :
-                    sub.difficulty === Difficulty.Medium ? 'bg-white text-amber-600 border-amber-100' :
-                    'bg-white text-emerald-600 border-emerald-100'
-                  }`}>
-                    {sub.name}
-                    <button onClick={() => removeSubject(sub.id)} className="text-slate-400 hover:text-red-500 transition-colors">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            
-            <hr className="border-slate-100" />
-
-            {/* Class / Busy Times Section */}
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-xs font-medium text-slate-500 flex items-center gap-1">
-                  <Briefcase className="w-3 h-3" /> {t.addClassTitle}
-                </label>
-                <button 
-                  onClick={() => setShowClassInput(!showClassInput)}
-                  className="text-[10px] text-indigo-600 font-medium hover:underline"
-                >
-                  {showClassInput ? 'Close' : '+ Add'}
-                </button>
-              </div>
-
-              {showClassInput && (
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 mb-3 space-y-2 animate-fade-in">
-                  <select 
-                    value={newClassDay} 
-                    onChange={e => setNewClassDay(e.target.value)}
-                    className="w-full p-2 text-xs rounded border border-slate-200 bg-white"
-                  >
-                    {t.days.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                       <label className="text-[9px] text-slate-400 block mb-0.5">{t.startTime}</label>
-                       <input 
-                         type="time" 
-                         value={newClassStart}
-                         onChange={e => setNewClassStart(e.target.value)}
-                         className="w-full p-1.5 text-xs rounded border border-slate-200"
+             {/* STEP 1: Subjects */}
+             {currentStep === 1 && (
+                <div className="space-y-6 animate-fade-in">
+                   {/* Add Subject */}
+                   <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-2">{t.subjects}</label>
+                     <div className="flex gap-2">
+                       <input
+                         type="text"
+                         value={newSubject}
+                         onChange={(e) => setNewSubject(e.target.value)}
+                         placeholder={t.subjectPlaceholder}
+                         className="flex-1 pl-4 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                         onKeyDown={(e) => e.key === 'Enter' && addSubject()}
                        />
-                    </div>
-                    <div className="flex-1">
-                       <label className="text-[9px] text-slate-400 block mb-0.5">{t.endTime}</label>
-                       <input 
-                         type="time" 
-                         value={newClassEnd}
-                         onChange={e => setNewClassEnd(e.target.value)}
-                         className="w-full p-1.5 text-xs rounded border border-slate-200"
-                       />
-                    </div>
-                  </div>
-                  <input 
-                    type="text" 
-                    placeholder={t.classPlaceholder}
-                    value={newClassLabel}
-                    onChange={e => setNewClassLabel(e.target.value)}
-                    className="w-full p-2 text-xs rounded border border-slate-200"
-                  />
-                  <Button onClick={addBusySlot} variant="secondary" className="w-full h-8 text-xs">{t.addClassBtn}</Button>
-                </div>
-              )}
+                       <Button onClick={addSubject} className="px-4 rounded-xl">
+                         <Plus className="w-5 h-5" />
+                       </Button>
+                     </div>
+                   </div>
 
-              {busySlots.length > 0 && (
-                <div className="space-y-1.5">
-                  {busySlots.map(slot => (
-                    <div key={slot.id} className="flex items-center justify-between bg-slate-100 px-2 py-1.5 rounded-lg border border-slate-200">
-                      <div className="flex items-center gap-2">
-                         <span className="text-[10px] font-bold text-slate-600 bg-white px-1.5 rounded">{slot.day.slice(0, 3)}</span>
-                         <div className="flex flex-col">
-                           <span className="text-[10px] font-medium text-slate-800">{slot.label}</span>
-                           <span className="text-[9px] text-slate-400">{slot.startTime} - {slot.endTime}</span>
+                   {/* Subject List */}
+                   <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                     {subjects.map(sub => (
+                       <div key={sub.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group hover:border-indigo-200 transition-colors">
+                         <div className="flex items-center gap-3">
+                           <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                             {sub.name.substring(0, 2).toUpperCase()}
+                           </div>
+                           <div>
+                             <p className="text-sm font-bold text-slate-700">{sub.name}</p>
+                             <p className="text-[10px] text-slate-400 uppercase tracking-wider">{sub.difficulty}</p>
+                           </div>
                          </div>
+                         <button onClick={() => removeSubject(sub.id)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
+                           <X className="w-4 h-4" />
+                         </button>
+                       </div>
+                     ))}
+                     {subjects.length === 0 && (
+                       <div className="text-center py-8 text-slate-400 text-sm border-2 border-dashed border-slate-100 rounded-xl">
+                         No subjects added yet
+                       </div>
+                     )}
+                   </div>
+                </div>
+             )}
+
+             {/* STEP 2: Routine */}
+             {currentStep === 2 && (
+                <div className="space-y-6 animate-fade-in">
+                   <div className="grid grid-cols-1 gap-4">
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                           <Home className="w-4 h-4 text-slate-400" /> {t.schoolEnd}
+                        </label>
+                        <input 
+                          type="time" 
+                          value={schoolEndTime}
+                          onChange={(e) => setSchoolEndTime(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500"
+                        />
+                     </div>
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                           <Moon className="w-4 h-4 text-slate-400" /> {t.bedTime}
+                        </label>
+                        <input 
+                          type="time" 
+                          value={bedTime}
+                          onChange={(e) => setBedTime(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500"
+                        />
+                     </div>
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                           <Calendar className="w-4 h-4 text-slate-400" /> {t.examDate}
+                        </label>
+                        <input 
+                          type="date" 
+                          value={examDate}
+                          onChange={(e) => setExamDate(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500"
+                        />
+                     </div>
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                           <Clock className="w-4 h-4 text-slate-400" /> {t.hoursPerDay}: <span className="text-indigo-600 font-bold">{hours}h</span>
+                        </label>
+                        <input 
+                          type="range" 
+                          min="1" 
+                          max="8" 
+                          step="0.5"
+                          value={hours}
+                          onChange={(e) => setHours(parseFloat(e.target.value))}
+                          className="w-full accent-indigo-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                        />
+                        <div className="flex justify-between text-xs text-slate-400 mt-1">
+                          <span>1h</span>
+                          <span>8h</span>
+                        </div>
+                     </div>
+                   </div>
+                </div>
+             )}
+
+             {/* STEP 3: Review */}
+             {currentStep === 3 && (
+                <div className="space-y-6 animate-fade-in text-center">
+                   <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                      <Sparkles className="w-10 h-10 text-indigo-600" />
+                   </div>
+                   <h3 className="text-xl font-bold text-slate-800">Ready to Generate!</h3>
+                   <p className="text-slate-500 text-sm max-w-xs mx-auto">
+                      We will create a personalized study plan based on your {subjects.length} subjects and routine.
+                   </p>
+                   
+                   <div className="bg-slate-50 p-4 rounded-xl text-left text-sm space-y-2 border border-slate-100">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Grade:</span>
+                        <span className="font-medium text-slate-700">{grade}</span>
                       </div>
-                      <button onClick={() => removeBusySlot(slot.id)} className="text-slate-400 hover:text-red-500">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Target:</span>
+                        <span className="font-medium text-slate-700">{examTarget}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Subjects:</span>
+                        <span className="font-medium text-slate-700">{subjects.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Daily Study:</span>
+                        <span className="font-medium text-slate-700">{hours} hours</span>
+                      </div>
+                   </div>
+
+                   {/* PROGRESS BAR */}
+                   {isLoading && (
+                     <div className="w-full mt-4 animate-fade-in text-left">
+                         <div className="flex justify-between text-[10px] text-indigo-600 font-bold mb-1">
+                             <span>{language === 'si' ? "සැලැස්ම සකසමින්..." : "Creating your roadmap..."}</span>
+                             <span>{progress}%</span>
+                         </div>
+                         <div className="w-full bg-indigo-100 rounded-full h-2.5 overflow-hidden">
+                             <div 
+                                 className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
+                                 style={{ width: `${progress}%` }}
+                             ></div>
+                         </div>
+                     </div>
+                   )}
+
+                   {error && (
+                     <div className="p-3 bg-rose-50 text-rose-600 text-sm rounded-lg border border-rose-100 flex items-center gap-2 justify-center">
+                        <AlertTriangle className="w-4 h-4" />
+                        {error}
+                     </div>
+                   )}
                 </div>
-              )}
-            </div>
+             )}
+          </div>
 
-            <hr className="border-slate-100" />
-
-            {/* Hours Slider */}
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                 <label className="text-xs font-medium text-slate-500">{t.hoursLabel}</label>
-                 <span className="text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded text-[10px]">{hours}h</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="8"
-                step="0.5"
-                value={hours}
-                onChange={(e) => setHours(parseFloat(e.target.value))}
-                className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                inputMode="decimal"
-              />
-              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                 <span>1h</span>
-                 <span>8h</span>
-              </div>
-            </div>
-
-            {/* Focus Input */}
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{t.focusLabel}</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                  <Target className="h-3.5 w-3.5 text-indigo-400" />
-                </div>
-                <input
-                  type="text"
-                  value={focus}
-                  onChange={(e) => setFocus(e.target.value)}
-                  placeholder={t.focusPlaceholder}
-                  className="w-full pl-8 pr-3 py-2 bg-slate-50 border-0 rounded-lg text-sm text-slate-700 placeholder-slate-400 focus:ring-1 focus:ring-indigo-500 transition-all hover:bg-slate-100/80"
-                />
-              </div>
-            </div>
-
-            {error && <p className="text-rose-500 text-xs bg-rose-50 p-2 rounded-lg flex items-center gap-2 border border-rose-100"><div className="w-1 h-1 rounded-full bg-rose-500" />{error}</p>}
-
-            <div className="fixed bottom-[100px] left-4 right-4 sm:static z-50 pt-3 pb-3 sm:pt-2 sm:pb-2 bg-white/95 backdrop-blur-md border border-slate-200 sm:border-t sm:border-x-0 sm:border-b-0 sm:border-slate-100 mt-4 sm:-mx-4 px-4 rounded-2xl sm:rounded-none sm:rounded-b-2xl shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.15)] sm:shadow-none">
-              <Button 
+          {/* Navigation Footer */}
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+             <Button 
+               variant="secondary" 
+               onClick={prevStep} 
+               disabled={currentStep === 0}
+               className="px-6"
+             >
+               <ChevronLeft className="w-4 h-4 mr-1" /> Back
+             </Button>
+             
+             {currentStep < 3 ? (
+                <Button onClick={nextStep} className="px-6 shadow-lg shadow-indigo-200">
+                   Next <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+             ) : (
+                <Button 
                   onClick={handleGenerate} 
-                  isLoading={isLoading} 
-                  className="w-full py-3.5 sm:py-3 rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 hover:shadow-xl transition-all bg-gradient-to-r from-indigo-600 to-purple-600 border-0"
-              >
-                {t.generateBtn}
-              </Button>
-            </div>
-            
-            {/* Spacer for mobile fixed button */}
-            <div className="h-24 sm:hidden"></div>
-            
-            {/* PROGRESS BAR */}
-            {isLoading && (
-              <div className="w-full mt-4 animate-fade-in">
-                  <div className="flex justify-between text-[10px] text-indigo-600 font-bold mb-1">
-                      <span>{language === 'si' ? "සැලැස්ම සකසමින්..." : "Creating your roadmap..."}</span>
-                      <span>{progress}%</span>
-                  </div>
-                  <div className="w-full bg-indigo-100 rounded-full h-2.5 overflow-hidden">
-                      <div 
-                          className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
-                          style={{ width: `${progress}%` }}
-                      ></div>
-                  </div>
-                  <p className="text-[9px] text-slate-400 mt-1.5 text-center">
-                      {progress < 30 
-                        ? (language === 'si' ? "විෂය නිර්දේශය අධ්‍යයනය කරමින්..." : "Analyzing Syllabus...") 
-                        : progress < 60 
-                          ? (language === 'si' ? "මූලික සැලැස්ම සකසමින්..." : "Drafting Phase 1...") 
-                          : (language === 'si' ? "දිගුකාලීන සැලැස්ම සම්පූර්ණ කරමින්..." : "Finalizing Long-term Plan...")
-                      }
-                  </p>
-              </div>
-            )}
-            
-            {/* Clear Data Button (Only if plan exists and NOT loading) */}
-            {plan && !isLoading && (
-                <button 
-                  onClick={clearStorage}
-                  className="w-full mt-2 py-2 flex items-center justify-center gap-2 text-xs font-medium text-red-500 hover:text-red-700 transition-colors"
+                  isLoading={isLoading}
+                  className="px-8 shadow-lg shadow-indigo-200 bg-gradient-to-r from-indigo-600 to-purple-600 border-0"
                 >
-                  <Trash2 className="w-3 h-3" /> {t.newPlan}
-                </button>
-            )}
+                   {t.generateBtn} <Sparkles className="w-4 h-4 ml-2" />
+                </Button>
+             )}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Output Section */}
-      <div className="lg:col-span-8">
-        {plan ? (
+      {/* Dashboard Section */}
+      {plan && (
           <div className="space-y-4 animate-fade-in">
             {/* Main Goal / Roadmap Card */}
             <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-2xl shadow-lg shadow-indigo-100 relative overflow-hidden">
@@ -951,8 +1048,8 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
                                 </span>
                             ) : (
                                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                                    week.phase.includes('Revision') ? 'bg-amber-100 text-amber-700' :
-                                    week.phase.includes('Consolidation') ? 'bg-blue-100 text-blue-700' :
+                                    (week.phase || '').includes('Revision') ? 'bg-amber-100 text-amber-700' :
+                                    (week.phase || '').includes('Consolidation') ? 'bg-blue-100 text-blue-700' :
                                     'bg-emerald-100 text-emerald-700'
                                     }`}>
                                     {week.phase}
@@ -997,17 +1094,51 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
                             </div>
                         )}
 
+                        {!isGeneratingThisWeek && week.sessions.length === 0 && (
+                            <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                                <Calendar className="w-8 h-8 mb-2 opacity-50" />
+                                <p className="text-xs font-medium mb-3">{t.clickToLoad}</p>
+                                <Button 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setLoadingWeek(index);
+                                        generateWeeklySessions(
+                                            plan.weeks[index],
+                                            subjects,
+                                            hours,
+                                            grade,
+                                            language,
+                                            busySlots,
+                                            { schoolEndTime, bedTime, examDate },
+                                            restDay
+                                        ).then(sessions => {
+                                            const newWeeks = [...plan.weeks];
+                                            newWeeks[index] = { ...newWeeks[index], sessions: sessions };
+                                            const updatedPlan = { ...plan, weeks: newWeeks };
+                                            setPlan(updatedPlan);
+                                            saveToStorage(updatedPlan);
+                                        }).catch(e => console.error(e)).finally(() => setLoadingWeek(null));
+                                    }}
+                                    variant="secondary"
+                                    className="text-xs h-8"
+                                >
+                                    Generate Schedule
+                                </Button>
+                            </div>
+                        )}
+
                         {!isGeneratingThisWeek && week.sessions.length > 0 && (
                             <div className="grid gap-3">
                             {t.days.map(day => {
                                 const englishDay = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][t.days.indexOf(day)];
                                 const sinhalaDay = ['සඳුදා', 'අඟහරුවාදා', 'බදාදා', 'බ්‍රහස්පතින්දා', 'සිකුරාදා', 'සෙනසුරාදා', 'ඉරිදා'][t.days.indexOf(day)];
                                 
-                                const daySessions = week.sessions.filter(s => 
-                                s.day.toLowerCase().includes(englishDay.toLowerCase()) || 
-                                s.day.includes(sinhalaDay) || 
-                                s.day === day
-                                );
+                                const daySessions = week.sessions.filter(s => {
+                                    const d = (s.day || '').toLowerCase().trim();
+                                    return d.includes(englishDay.toLowerCase()) || 
+                                           d.includes(sinhalaDay) || 
+                                           d === day.toLowerCase().trim();
+                                });
                                 const dayBusySlots = busySlots.filter(s => 
                                 s.day.toLowerCase() === englishDay.toLowerCase() || 
                                 s.day === sinhalaDay
@@ -1058,7 +1189,7 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
                                                             <div className="flex items-center gap-2 mt-1">
                                                                 <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-500">{session.durationMinutes}m</span>
                                                                 <span className={`text-[9px] px-1.5 py-0.5 rounded ${
-                                                                    session.technique.includes('Review') ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'
+                                                                    (session.technique || '').includes('Review') ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'
                                                                 }`}>{session.technique}</span>
                                                             </div>
                                                         </div>
@@ -1124,16 +1255,8 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
               </div>
             )}
           </div>
-        ) : (
-          <div className="h-full min-h-[300px] flex flex-col items-center justify-center text-slate-400 p-6 bg-white/50 rounded-2xl border-2 border-dashed border-slate-200 hover:border-slate-300 transition-colors">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                <Calendar className="w-8 h-8 text-slate-300" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-600 mb-1">{t.noPlan}</h3>
-            <p className="text-xs text-slate-500 text-center max-w-xs">{t.noPlanDesc}</p>
-          </div>
-        )}
-      </div>
+      )}
+    </div>
     </div>
   );
 };
