@@ -118,7 +118,11 @@ const checkRateLimit = async (userId: string, actionType: string): Promise<boole
         
         return count < limit;
     } catch (e) {
-        handleFirestoreError(e, OperationType.GET, usageRef.path);
+        try {
+            handleFirestoreError(e, OperationType.GET, usageRef.path);
+        } catch (err) {
+            console.warn("Rate limit check failed (Offline/Error), allowing usage.", err);
+        }
         return true;
     }
 };
@@ -181,7 +185,11 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
                 return cachedSnap.data();
             }
         } catch (e) {
-            handleFirestoreError(e, OperationType.GET, cachedRef.path);
+            try {
+                handleFirestoreError(e, OperationType.GET, cachedRef.path);
+            } catch (err) {
+                console.warn("Cache check failed (Offline/Error), skipping cache.", err);
+            }
         }
     }
 
@@ -262,7 +270,11 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
                     createdAt: serverTimestamp()
                 });
             } catch (e) {
-                handleFirestoreError(e, OperationType.CREATE, queuePath);
+                try {
+                    handleFirestoreError(e, OperationType.CREATE, queuePath);
+                } catch (err) {
+                    console.warn("Failed to add to verification queue", err);
+                }
             }
         }
 
@@ -271,7 +283,11 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
             await setDoc(cachedRef, answerJson);
             await incrementUsage(userId, 'camera_solve');
         } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, cachedRef.path);
+            try {
+                handleFirestoreError(e, OperationType.WRITE, cachedRef.path);
+            } catch (err) {
+                console.warn("Failed to cache answer", err);
+            }
         }
     }
 
@@ -299,10 +315,15 @@ async function executeWithKeyRotation(model: string, params: any) {
                 error.status === 429 ||
                 error.status === 503 ||
                 error.message?.includes('Quota exceeded');
+
+            const isNetworkError = 
+                error.message?.includes('Rpc failed') || 
+                error.message?.includes('xhr error') ||
+                error.message?.includes('fetch failed');
                 
-            if (isQuotaError && apiKeys.length > 0) {
+            if ((isQuotaError || isNetworkError) && apiKeys.length > 0) {
                 const waitTime = 2000 + (Math.random() * 1000);
-                console.warn(`⚠️ Quota limit hit. Waiting ${Math.round(waitTime)}ms and rotating...`);
+                console.warn(`⚠️ Error (Quota/Network). Waiting ${Math.round(waitTime)}ms and rotating...`);
                 await sleep(waitTime);
                 continue;
             }
