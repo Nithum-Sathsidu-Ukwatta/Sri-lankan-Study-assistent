@@ -1,5 +1,5 @@
 
-export type Language = 'si' | 'en';
+export type Language = 'si';
 
 export enum Difficulty {
   Easy = 'Easy',
@@ -54,6 +54,7 @@ export interface StudyPlan {
   weeks: WeeklySchedule[];
   tips: string[];
   sourceUrls?: string[];
+  source?: 'database' | 'ai' | 'cache';
 }
 
 export interface QuizQuestion {

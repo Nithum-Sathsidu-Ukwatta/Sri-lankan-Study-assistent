@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, email, role, createdAt
+    //
+    // Collection: languages/{lang}/grades/{grade}/subjects/{sub}/syllabus
+    // Fields: units, lastUpdated
+    //
+    // Collection: languages/{lang}/grades/{grade}/subjects/{sub}/quizzes
+    // Fields: questions, createdAt, source
+    //
+    // Collection: languages/{lang}/grades/{grade}/subjects/{sub}/flashcards
+    // Fields: cards, createdAt, source
+    //
+    // Collection: study_plans
+    // Fields: userId, plan, createdAt
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "dimuthuu@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string &&
+             data.email is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin() || userId == 'guest';
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) || isAdmin() || userId == 'guest';
+      
+      match /usage/{monthKey} {
+        allow read, write: if isOwner(userId) || isAdmin() || userId == 'guest';
+      }
+      match /daily_usage/{day} {
+        allow read, write: if isOwner(userId) || isAdmin() || userId == 'guest';
+      }
+    }
+
+    match /usage_monthly/{monthKey} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /languages/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /syllabus/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /quizzes/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /flashcards/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /study_plans/{planId} {
+      allow read, write: if true;
+    }
+
+    match /cached_answers/{textHash} {
+      allow read, write: if true; // AI caching
+    }
+
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /_connection_test/{docId} {
+      allow read, write: if true;
+    }
+
+    match /verification_queue/{docId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

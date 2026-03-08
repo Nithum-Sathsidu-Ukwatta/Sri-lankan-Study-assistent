@@ -28,9 +28,9 @@ export const TipsAgent: React.FC<TipsAgentProps> = ({ language }) => {
   }[language];
 
   const suggestions = [
-    language === 'si' ? "පාඩම් කිරීමට හොඳම වෙලාව කීයද?" : "Best time to study?",
-    language === 'si' ? "කම්මැලිකම නැති කරගන්නේ කොහොමද?" : "How to stop procrastinating?",
-    language === 'si' ? "මතක තබා ගැනීමේ කෙටි ක්‍රම මොනවාද?" : "Memory techniques?"
+    "පාඩම් කිරීමට හොඳම වෙලාව කීයද?",
+    "කම්මැලිකම නැති කරගන්නේ කොහොමද?",
+    "මතක තබා ගැනීමේ කෙටි ක්‍රම මොනවාද?"
   ];
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);

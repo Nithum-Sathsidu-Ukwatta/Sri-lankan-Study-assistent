@@ -151,14 +151,7 @@ const App: React.FC = () => {
                   <span>{points}</span>
                 </button>
 
-                {/* Language Toggle */}
-                <button 
-                    onClick={() => setLanguage(l => l === 'si' ? 'en' : 'si')}
-                    className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm active:scale-95"
-                >
-                    <Languages className="w-4 h-4" />
-                    <span>{language === 'si' ? 'SI' : 'EN'}</span>
-                </button>
+                {/* Language Toggle Removed for Sinhala-only mode */}
 
                  {/* Admin Button */}
                  <button 

@@ -4,12 +4,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist",
-    "build": "tsc && vite build",
+    "dev": "tsx server.ts",
+    "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
+    "start": "node server.ts",
     "syllabus-agent": "ts-node --esm scripts/syllabusAgent.ts"
   },
   "dependencies": {
@@ -17,11 +16,15 @@
     "@capacitor/app": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@google/genai": "^1.39.0",
+    "@types/express": "^5.0.6",
+    "express": "^5.2.1",
     "firebase": "10.13.2",
+    "firebase-admin": "^13.7.0",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Subject, Difficulty, StudyPlan, Language, BusySlot, WeeklySchedule } from '../types';
 import { generateStudyPlan, generateWeeklySessions, solveImage } from '../services/geminiService';
-import { Plus, Calendar, Clock, BookOpen, Activity, GraduationCap, Target, Sparkles, X, Link as LinkIcon, Briefcase, Moon, Home, ChevronDown, ChevronRight, ChevronLeft, Flag, Coffee, Loader2, Save, Trash2, CheckSquare, Zap, Lock, PlayCircle, Coins, Lightbulb, Camera, Upload, AlertTriangle } from 'lucide-react';
+import { Plus, Calendar, Clock, BookOpen, Activity, GraduationCap, Target, Sparkles, X, Link as LinkIcon, Briefcase, Moon, Home, ChevronDown, ChevronRight, ChevronLeft, Flag, Coffee, Loader2, Save, Trash2, CheckSquare, Zap, Lock, PlayCircle, Coins, Lightbulb, Camera, Upload, AlertTriangle, Database } from 'lucide-react';
 import { Button } from './ui/Button';
 
 interface StudyPlannerProps {
@@ -43,7 +43,7 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
   
   // Busy Slot State
   const [busySlots, setBusySlots] = useState<BusySlot[]>([]);
-  const [newClassDay, setNewClassDay] = useState(language === 'si' ? 'සඳුදා' : 'Monday');
+  const [newClassDay, setNewClassDay] = useState('සඳුදා');
   const [newClassStart, setNewClassStart] = useState('08:00');
   const [newClassEnd, setNewClassEnd] = useState('10:00');
   const [newClassLabel, setNewClassLabel] = useState('');
@@ -61,6 +61,9 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [weekToUnlock, setWeekToUnlock] = useState<number | null>(null);
 
+  // Delete Modal State
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
   // Streak State
   const [streak, setStreak] = useState(0);
 
@@ -68,7 +71,7 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
   const [progress, setProgress] = useState(0); // Progress State
   const [plan, setPlan] = useState<StudyPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
-
+  
   // Camera Solver Handlers
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -249,15 +252,18 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
       return Math.round((completed / sessions.length) * 100);
   };
 
-  const clearStorage = () => {
-    if (window.confirm(language === 'si' ? "ඔබට විශ්වාසද? ඔබගේ දැනට පවතින සැලැස්ම මැකී යනු ඇත." : "Are you sure? This will delete your current plan.")) {
-        localStorage.removeItem(STORAGE_KEY);
-        setPlan(null);
-        setExpandedWeekIndex(0);
-        setStreak(0);
-        localStorage.removeItem(STREAK_KEY);
-        setCurrentStep(0);
-    }
+  const handleClearStorageClick = () => {
+    setShowDeleteModal(true);
+  };
+
+  const confirmClearStorage = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setPlan(null);
+    setExpandedWeekIndex(0);
+    setStreak(0);
+    localStorage.removeItem(STREAK_KEY);
+    setCurrentStep(0);
+    setShowDeleteModal(false);
   };
 
   const t = {
@@ -323,6 +329,10 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
       uploadBtn: "ඡායාරූපයක් තෝරන්න",
       subjects: "විෂයයන්",
       hoursPerDay: "දිනකට පැය ගණන",
+      deleteConfirmTitle: "ඔබට විශ්වාසද?",
+      deleteConfirmDesc: "ඔබගේ දැනට පවතින සැලැස්ම මැකී යනු ඇත.",
+      deleteConfirmBtn: "මකන්න",
+      cancelBtn: "අවලංගු කරන්න"
     },
     en: {
       title: "Study Plan",
@@ -386,13 +396,15 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
       uploadBtn: "Upload Photo",
       subjects: "Subjects",
       hoursPerDay: "Hours Per Day",
+      deleteConfirmTitle: "Are you sure?",
+      deleteConfirmDesc: "This will delete your current plan.",
+      deleteConfirmBtn: "Delete",
+      cancelBtn: "Cancel"
     }
   }[language];
 
   const grades = [
-    "6 ශ්‍රේණිය (Grade 6)", "7 ශ්‍රේණිය (Grade 7)", "8 ශ්‍රේණිය (Grade 8)", 
-    "9 ශ්‍රේණිය (Grade 9)", "10 ශ්‍රේණිය (Grade 10)", "11 ශ්‍රේණිය (Grade 11)",
-    "12 ශ්‍රේණිය (Grade 12)", "13 ශ්‍රේණිය (Grade 13)"
+    "10 ශ්‍රේණිය (Grade 10)"
   ];
 
   const getAvailableExamTargets = () => {
@@ -426,9 +438,9 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
 
   const restDayOptions = [
     { val: 'None', label: t.restDayNone },
-    { val: 'Sunday', label: language === 'si' ? 'ඉරිදා' : 'Sunday' },
-    { val: 'Saturday', label: language === 'si' ? 'සෙනසුරාදා' : 'Saturday' },
-    { val: 'Friday', label: language === 'si' ? 'සිකුරාදා' : 'Friday' }
+    { val: 'Sunday', label: 'ඉරිදා' },
+    { val: 'Saturday', label: 'සෙනසුරාදා' },
+    { val: 'Friday', label: 'සිකුරාදා' }
   ];
 
   const addSubject = () => {
@@ -492,7 +504,7 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
           examDate
         },
         restDay,
-        (p) => setProgress(p) // New callback
+        (p) => setProgress(p)
       );
       setPlan(generatedPlan);
       saveToStorage(generatedPlan);
@@ -721,6 +733,36 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
           </div>
       )}
 
+      {/* DELETE MODAL */}
+      {showDeleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+              <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center border border-red-100">
+                  <div className="w-16 h-16 bg-gradient-to-tr from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-red-200">
+                      <Trash2 className="w-8 h-8 text-white" />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">{t.deleteConfirmTitle}</h3>
+                  <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                      {t.deleteConfirmDesc}
+                  </p>
+                  <div className="flex flex-col gap-3">
+                      <button 
+                        onClick={confirmClearStorage}
+                        className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold shadow-md flex items-center justify-center gap-2 transition-all active:scale-95"
+                      >
+                          <Trash2 className="w-5 h-5" />
+                          {t.deleteConfirmBtn}
+                      </button>
+                      <button 
+                        onClick={() => setShowDeleteModal(false)}
+                        className="text-sm text-slate-400 font-medium hover:text-slate-600"
+                      >
+                          {t.cancelBtn}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Input Section */}
       {/* Wizard Section */}
       {!plan && (
@@ -783,7 +825,6 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
                 </div>
              )}
 
-             {/* STEP 1: Subjects */}
              {currentStep === 1 && (
                 <div className="space-y-6 animate-fade-in">
                    {/* Add Subject */}
@@ -924,7 +965,7 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
                    {isLoading && (
                      <div className="w-full mt-4 animate-fade-in text-left">
                          <div className="flex justify-between text-[10px] text-indigo-600 font-bold mb-1">
-                             <span>{language === 'si' ? "සැලැස්ම සකසමින්..." : "Creating your roadmap..."}</span>
+                             <span>{"සැලැස්ම සකසමින්..."}</span>
                              <span>{progress}%</span>
                          </div>
                          <div className="w-full bg-indigo-100 rounded-full h-2.5 overflow-hidden">
@@ -986,6 +1027,18 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
                             <Target className="w-4 h-4 text-white" />
                         </div>
                         <h3 className="text-sm font-medium">{t.weeklyPlan}</h3>
+                        {plan.source && (
+                            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                                plan.source === 'database' ? 'bg-emerald-500/20 border-emerald-400/30 text-emerald-100' :
+                                plan.source === 'cache' ? 'bg-blue-500/20 border-blue-400/30 text-blue-100' :
+                                'bg-purple-500/20 border-purple-400/30 text-purple-100'
+                            }`}>
+                                {plan.source === 'database' && <Database className="w-3 h-3" />}
+                                {plan.source === 'cache' && <Save className="w-3 h-3" />}
+                                {plan.source === 'ai' && <Sparkles className="w-3 h-3" />}
+                                <span>{plan.source === 'database' ? 'Database' : plan.source === 'cache' ? 'Cached' : 'AI Generated'}</span>
+                            </div>
+                        )}
                     </div>
                     {/* Actions */}
                     <div className="flex items-center gap-2">
@@ -996,7 +1049,7 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
                             </div>
                         )}
                         <button 
-                            onClick={clearStorage}
+                            onClick={handleClearStorageClick}
                             className="flex items-center gap-1.5 bg-black/20 hover:bg-red-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm transition-all text-xs font-medium"
                         >
                             <Trash2 className="w-3.5 h-3.5" />

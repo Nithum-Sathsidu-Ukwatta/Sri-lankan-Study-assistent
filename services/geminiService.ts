@@ -4,12 +4,17 @@ import { Subject, StudyPlan, QuizQuestion, Language, BusySlot, UserRoutine, Week
 import { SYLLABUS_DB, normalizeSubject, SyllabusUnit, GradeSyllabus } from '../data/syllabusDatabase';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore';
+import { handleFirestoreError, OperationType } from './firestoreUtils';
 import Tesseract from 'tesseract.js';
 
 const apiKeys = [
   process.env.GEMINI_API_KEY,
+  process.env.GEMINI_API_KEY_2,
+  process.env.GEMINI_API_KEY_3,
   process.env.API_KEY,
-  import.meta.env?.VITE_GEMINI_API_KEY
+  import.meta.env?.VITE_GEMINI_API_KEY,
+  import.meta.env?.VITE_GEMINI_API_KEY_2,
+  import.meta.env?.VITE_GEMINI_API_KEY_3
 ].filter(Boolean) as string[];
 
 console.log("Gemini Service v2.2 - Production Update"); // Version Check
@@ -23,9 +28,9 @@ function getNextAiClient() {
 }
 
 // --- SMART HYBRID STRATEGY ---
-const MODEL_COMPLEX = "gemini-2.5-flash";
+const MODEL_COMPLEX = "gemini-3-flash-preview";
 // Switched the 'Fast' model to be the primary for standard tasks to save money
-const MODEL_FAST = "gemini-2.5-flash"; 
+const MODEL_FAST = "gemini-3-flash-preview"; 
 
 const CACHE_PREFIX = 'nexus_plan_cache_';
 
@@ -94,7 +99,7 @@ const incrementUsage = async (userId: string, actionType: string) => {
         await setDoc(userRef, { [actionType]: increment(1) }, { merge: true });
         await setDoc(globalRef, { total_actions: increment(1) }, { merge: true });
     } catch (e) {
-        console.error("Usage increment failed", e);
+        handleFirestoreError(e, OperationType.WRITE, userRef.path);
     }
 };
 
@@ -109,10 +114,11 @@ const checkRateLimit = async (userId: string, actionType: string): Promise<boole
         if (!docSnap.exists()) return true;
         
         const count = docSnap.data()[actionType] || 0;
-        const limit = actionType === 'camera_solve' ? 10 : 50; // Free tier limits
+        const limit = actionType === 'camera_solve' ? 14400 : 14400; // Free tier limits
         
         return count < limit;
     } catch (e) {
+        handleFirestoreError(e, OperationType.GET, usageRef.path);
         return true;
     }
 };
@@ -140,7 +146,7 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
         const base64Data = base64.split(',')[1];
 
         const visionResp = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-flash-preview",
             contents: [
                 { inlineData: { mimeType: "image/jpeg", data: base64Data } },
                 { text: "Extract all text from this image exactly as is." }
@@ -168,10 +174,14 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
     const textHash = await getTextHash(text);
     if (db) {
         const cachedRef = doc(db, 'cached_answers', textHash);
-        const cachedSnap = await getDoc(cachedRef);
-        if (cachedSnap.exists()) {
-            await incrementUsage(userId, 'camera_solve_cache');
-            return cachedSnap.data();
+        try {
+            const cachedSnap = await getDoc(cachedRef);
+            if (cachedSnap.exists()) {
+                await incrementUsage(userId, 'camera_solve_cache');
+                return cachedSnap.data();
+            }
+        } catch (e) {
+            handleFirestoreError(e, OperationType.GET, cachedRef.path);
         }
     }
 
@@ -186,7 +196,7 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
         SYSTEM: You are an expert tutor. Use the provided text to answer the student's question.
         - If "learning_mode" is TRUE (${learningMode}), provide guided steps, NOT the final answer.
         - Output MUST be valid JSON.
-        - Language: ${language === 'si' ? 'Sinhala' : 'English'}
+        - Language: Sinhala
 
         QUESTION TEXT:
         ${text}
@@ -202,7 +212,7 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
     `;
 
     const genResp = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         contents: prompt,
         config: { responseMimeType: "application/json" }
     });
@@ -229,7 +239,7 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
     `;
     
     const verifyResp = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         contents: verifyPrompt,
         config: { responseMimeType: "application/json" }
     });
@@ -241,18 +251,28 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
     // 7. Routing & Storage
     if (db) {
         if (!answerJson.verified || ocrConfidence < 0.70) {
-            await addDoc(collection(db, 'verification_queue'), {
-                question: text,
-                answer: answerJson,
-                ocr_conf: ocrConfidence,
-                ver_conf: verifyJson.confidence,
-                status: 'pending',
-                createdAt: serverTimestamp()
-            });
+            const queuePath = 'verification_queue';
+            try {
+                await addDoc(collection(db, queuePath), {
+                    question: text,
+                    answer: answerJson,
+                    ocr_conf: ocrConfidence,
+                    ver_conf: verifyJson.confidence,
+                    status: 'pending',
+                    createdAt: serverTimestamp()
+                });
+            } catch (e) {
+                handleFirestoreError(e, OperationType.CREATE, queuePath);
+            }
         }
 
-        await setDoc(doc(db, 'cached_answers', textHash), answerJson);
-        await incrementUsage(userId, 'camera_solve');
+        const cachedRef = doc(db, 'cached_answers', textHash);
+        try {
+            await setDoc(cachedRef, answerJson);
+            await incrementUsage(userId, 'camera_solve');
+        } catch (e) {
+            handleFirestoreError(e, OperationType.WRITE, cachedRef.path);
+        }
     }
 
     return answerJson;
@@ -260,27 +280,33 @@ export const solveImage = async (imageUrl: string, userId: string, language: Lan
 
 async function executeWithKeyRotation(model: string, params: any) {
     let lastError;
-    const maxAttempts = Math.max(1, apiKeys.length);
+    const maxAttemptsPerKey = 2;
+    const totalMaxAttempts = apiKeys.length * maxAttemptsPerKey;
     
-    for (let i = 0; i < maxAttempts; i++) {
+    for (let attempt = 0; attempt < totalMaxAttempts; attempt++) {
         const ai = getNextAiClient();
         try {
-            return await ai.models.generateContent({
+            const result = await ai.models.generateContent({
                 ...params,
                 model: model,
             });
+            console.log(`✅ Successfully generated content using model: ${model}`);
+            return result;
         } catch (error: any) {
             lastError = error;
             const isQuotaError = 
                 error.message?.includes('429') || 
                 error.status === 429 ||
-                error.status === 503;
+                error.status === 503 ||
+                error.message?.includes('Quota exceeded');
                 
-            if (isQuotaError && apiKeys.length > 1) {
-                console.warn(`⚠️ Key hit quota limit (429/503). Rotating to next key...`);
+            if (isQuotaError && apiKeys.length > 0) {
+                const waitTime = 2000 + (Math.random() * 1000);
+                console.warn(`⚠️ Quota limit hit. Waiting ${Math.round(waitTime)}ms and rotating...`);
+                await sleep(waitTime);
                 continue;
             }
-            throw error; // If it's not a quota error, throw immediately
+            throw error; 
         }
     }
     throw lastError;
@@ -302,22 +328,157 @@ async function generateWithFallback(
     }
 }
 
+// --- AI SYLLABUS FETCHING ---
+export async function extractSyllabusFromPDF(pdfBase64: string, grade: string, language: string): Promise<{name: string, units: SyllabusUnit[]}[]> {
+    const prompt = `
+    This is a PDF of the official Sri Lankan National Institute of Education (NIE) syllabus for Grade ${grade}.
+    Language: Sinhala
+
+    Please extract the syllabus units/topics for ALL subjects found in this PDF.
+    Return a JSON object where keys are subject names and values are arrays of objects with ONLY a 'unit' property.
+    Do NOT generate explanations. This is to ensure maximum speed.
+    
+    Example Structure:
+    {
+      "Science": [{"unit": "Unit 1: Plant life"}, {"unit": "Unit 2: Motion"}],
+      "Math": [{"unit": "Unit 1: Algebra"}]
+    }
+    `;
+
+    try {
+        const response = await executeWithKeyRotation(MODEL_COMPLEX, {
+            contents: [
+                {
+                    inlineData: {
+                        mimeType: "application/pdf",
+                        data: pdfBase64
+                    }
+                },
+                { text: prompt }
+            ],
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+
+        const text = response.text || "{}";
+        const data = JSON.parse(text);
+        return Object.entries(data).map(([name, units]) => ({ name, units: units as SyllabusUnit[] }));
+    } catch (e) {
+        console.error("Failed to extract syllabus from PDF:", e);
+        throw new Error("Failed to read the PDF syllabus. Please ensure it's a valid NIE syllabus PDF.");
+    }
+}
+
+export async function generatePackFromPDF(pdfBase64: string, grade: string, subject: string, unit: string, language: string): Promise<{ quiz: QuizQuestion[], flashcards: Flashcard[] }> {
+    const prompt = `
+    This is a PDF of the official Sri Lankan National Institute of Education (NIE) syllabus or a study material for Grade ${grade}, Subject: ${subject}.
+    Language: Sinhala
+
+    Please generate a comprehensive study pack for the unit: "${unit}".
+    The pack should include:
+    1. A quiz with 10 multiple-choice questions (MCQs).
+    2. A set of 10 flashcards (term and definition).
+
+    Return a JSON object with 'quiz' and 'flashcards' properties.
+    
+    Quiz Question Structure:
+    { "question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "..." }
+
+    Flashcard Structure:
+    { "front": "...", "back": "..." }
+    `;
+
+    try {
+        const response = await executeWithKeyRotation(MODEL_COMPLEX, {
+            contents: [
+                {
+                    inlineData: {
+                        mimeType: "application/pdf",
+                        data: pdfBase64
+                    }
+                },
+                { text: prompt }
+            ],
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+
+        const text = response.text || "{}";
+        const data = JSON.parse(text);
+        return {
+            quiz: (data.quiz || []) as QuizQuestion[],
+            flashcards: (data.flashcards || []) as Flashcard[]
+        };
+    } catch (e) {
+        console.error("Failed to generate pack from PDF:", e);
+        throw new Error("Failed to generate study pack from the provided PDF.");
+    }
+}
+
+async function fetchSyllabiWithAI(grade: string, subjects: string[], language: string): Promise<{name: string, units: SyllabusUnit[]}[]> {
+    if (subjects.length === 0) return [];
+    
+    const prompt = `
+    Find the official Sri Lankan National Institute of Education (NIE) syllabus for the following subjects in Grade ${grade}:
+    Subjects: ${subjects.join(', ')}
+    Language: Sinhala
+
+    CRITICAL: You MUST find the exact units and topics as defined by the NIE Sri Lanka for the local curriculum. 
+    Do not provide generic topics. Use your Google Search tool to verify the current NIE syllabus for each subject.
+    
+    Return a JSON object where keys are subject names and values are arrays of objects with ONLY a 'unit' property.
+    Do NOT generate explanations. This is to ensure maximum speed.
+    
+    Example: 
+    {
+      "Science": [{"unit": "Unit 1: Plant life"}, {"unit": "Unit 2: Motion"}],
+      "History": [{"unit": "Unit 1: Ancient Civilizations"}]
+    }
+    `;
+
+    try {
+        const response = await generateWithFallback(MODEL_FAST, MODEL_COMPLEX, {
+            contents: prompt,
+            config: {
+                temperature: 0.1,
+                tools: [{ googleSearch: {} }],
+                responseMimeType: "application/json"
+            }
+        });
+
+        const text = response.text || "{}";
+        const data = JSON.parse(text);
+        return Object.entries(data).map(([name, units]) => ({ name, units: units as SyllabusUnit[] }));
+    } catch (e) {
+        console.error("Failed to fetch AI syllabi:", e);
+        return [];
+    }
+}
+
 // --- HYBRID DB GENERATION (Firebase -> Local -> AI) ---
 async function generateFromDB(
     subjects: Subject[],
     grade: string,
     examDateStr: string,
-    language: Language
+    language: Language,
+    onProgress?: (p: number) => void,
+    initialSyllabi: { name: string, units: SyllabusUnit[] }[] = []
 ): Promise<{ weeks: any[], tips: string[], isLocal: boolean } | null> {
     
-    const relevantSyllabi: { name: string, units: SyllabusUnit[] }[] = [];
-    const subjectsFoundInFirebase = new Set<string>();
+    const relevantSyllabi: { name: string, units: SyllabusUnit[] }[] = [...initialSyllabi];
+    const subjectsFoundInFirebase = new Set<string>(initialSyllabi.map(s => s.name));
+
+    if (onProgress) onProgress(25);
 
     // 1. Try Fetching from Firebase Firestore for each subject
-    if (db) {
+    if (db && relevantSyllabi.length < subjects.length) {
         const firestore = db;
         const safeGrade = createDocId(grade);
-        const fetchPromises = subjects.map(async (sub) => {
+        const fetchPromises = subjects
+            .filter(sub => !subjectsFoundInFirebase.has(sub.name))
+            .map(async (sub) => {
             try {
                 const normalizedName = normalizeSubject(sub.name);
                 const safeSubject = createDocId(normalizedName);
@@ -332,7 +493,7 @@ async function generateFromDB(
                     }
                 }
             } catch (e) {
-                console.warn(`Firebase fetch for ${sub.name} failed.`, e);
+                handleFirestoreError(e, OperationType.GET, `languages/${language}/grades/${safeGrade}/subjects/.../syllabus/main`);
             }
         });
 
@@ -341,6 +502,7 @@ async function generateFromDB(
         if (subjectsFoundInFirebase.size > 0) {
              console.log(`✅ Fetched ${subjectsFoundInFirebase.size} syllabi from Firebase Firestore`);
         }
+        if (onProgress) onProgress(40);
     }
 
     // 2. Fallback to Local DB for subjects NOT found in Firebase
@@ -356,10 +518,47 @@ async function generateFromDB(
                 }
             }
         });
+        if (onProgress) onProgress(50);
+    }
+
+    // 3. Fallback to AI Search for any remaining missing subjects
+    if (subjects.length > relevantSyllabi.length) {
+        console.log("ℹ️ Fetching missing syllabi via AI Search (Batch Mode)...");
+        
+        const missingSubjectNames = subjects
+            .filter(sub => !relevantSyllabi.find(s => s.name === sub.name))
+            .map(sub => sub.name);
+        
+        if (missingSubjectNames.length > 0) {
+            if (onProgress) onProgress(60);
+            try {
+                const aiResults = await fetchSyllabiWithAI(grade, missingSubjectNames, language);
+                
+                for (const res of aiResults) {
+                    relevantSyllabi.push(res);
+                    console.log(` -> AI successfully found ${res.units.length} units for ${res.name}.`);
+
+                    // Cache to Firebase for future users
+                    if (db) {
+                        const safeGrade = createDocId(grade);
+                        const safeSubject = createDocId(normalizeSubject(res.name));
+                        const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'syllabus', 'main');
+                        try {
+                            await setDoc(docRef, { units: res.units, updatedAt: new Date().toISOString(), source: 'ai-search' });
+                        } catch (e) {
+                            handleFirestoreError(e, OperationType.WRITE, docRef.path);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("AI Syllabus Search failed completely.", e);
+                throw new Error("Failed to fetch accurate syllabus data from AI. Please check your internet connection or try again later.");
+            }
+        }
     }
 
     if (relevantSyllabi.length === 0) {
-        console.warn("No syllabus data found in Firebase or Local DB for selected subjects.");
+        console.warn("No syllabus data found in Firebase, Local DB, or via AI for selected subjects.");
         return null;
     }
 
@@ -377,16 +576,26 @@ async function generateFromDB(
         const weekEnd = new Date(currentWeekStart);
         weekEnd.setDate(weekEnd.getDate() + 6);
 
-        // Round-robin assign units
+        // Distribute units evenly across weeks
         const weeklyGoals: string[] = [];
         
         relevantSyllabi.forEach(syllabus => {
-            const unitIndex = Math.floor(((i - 1) / totalWeeks) * syllabus.units.length);
-            if (syllabus.units[unitIndex]) {
-                const u = syllabus.units[unitIndex];
-                const goalText = u.explanation 
-                    ? `${u.unit} - ${u.explanation}`
-                    : u.unit;
+            let weekUnits: any[] = [];
+            if (totalWeeks >= syllabus.units.length) {
+                // More weeks than units. 1 unit per week until we run out.
+                if (i - 1 < syllabus.units.length) {
+                    weekUnits = [syllabus.units[i - 1]];
+                }
+            } else {
+                // More units than weeks. Group units.
+                const unitsPerWeek = syllabus.units.length / totalWeeks;
+                const startIndex = Math.floor((i - 1) * unitsPerWeek);
+                const endIndex = i === totalWeeks ? syllabus.units.length : Math.floor(i * unitsPerWeek);
+                weekUnits = syllabus.units.slice(startIndex, endIndex);
+            }
+
+            if (weekUnits.length > 0) {
+                const goalText = weekUnits.map(u => u.explanation ? `${u.unit} - ${u.explanation}` : u.unit).join(' & ');
                 weeklyGoals.push(`${syllabus.name}: ${goalText}`);
             }
         });
@@ -407,120 +616,14 @@ async function generateFromDB(
         currentWeekStart.setDate(currentWeekStart.getDate() + 7);
     }
 
-    const tips = language === 'si' 
-        ? ["කෙටි විවේක ලබා ගනිමින් පාඩම් කරන්න.", "පසුගිය විභාග ප්‍රශ්න පත්‍ර සාකච්ඡා කරන්න."]
-        : ["Take short breaks using Pomodoro.", "Practice past papers regularly."];
+    const tips = ["කෙටි විවේක ලබා ගනිමින් පාඩම් කරන්න.", "පසුගිය විභාග ප්‍රශ්න පත්‍ර සාකච්ඡා කරන්න."];
 
     return { weeks, tips, isLocal: true };
 }
 
 
 // --- AI GENERATION ---
-async function generateRoadmapBatch(
-    startWeekNumber: number,
-    startDateStr: string,
-    endDateStr: string,
-    isFirstBatch: boolean,
-    params: {
-        grade: string,
-        subjectsStr: string,
-        restDay: string,
-        examContextInstruction: string,
-        langContext: string,
-        currentFormattedDate: string,
-        examDate: string
-    }
-): Promise<any> {
-    const prompt = `
-    You are an expert curriculum developer for the National Institute of Education (NIE) in Sri Lanka. 
-    Task: Create a **PARTIAL ROADMAP** (${startDateStr} to ${endDateStr}).
-    Part ${isFirstBatch ? '1' : '2'} of plan.
-    
-    Context:
-    - Grade: ${params.grade}
-    - Subjects: ${params.subjectsStr}
-    - Language: ${params.langContext}
-    
-    **CRITICAL RULES:**
-    1. Do NOT invent or guess units. Use the exact Sri Lankan local syllabus.
-    2. Use your search tool to find the official NIE (National Institute of Education Sri Lanka - nie.lk) syllabus for the specified grade and subjects to ensure the topics and their sequence are 100% accurate. Base the roadmap STRICTLY on the official curriculum.
-    
-    ${params.examContextInstruction}
-
-    Strict Rules:
-    1. **Accuracy:** Use search results for the syllabus. Do not guess.
-    2. **Sequence:** Follow the official textbook/syllabus order precisely.
-    3. **Start:** Begin at Week ${startWeekNumber}.
-    4. **Goal Format:** The 'goal' field MUST be formatted as "Subject: Topic | Subject: Topic". Example: "History: Unit 1 - Kings | Science: Unit 1 - Plants".
-    
-    **TOKEN SAVING:**
-    1. Output JSON only. No explanations.
-    2. ALL weeks must have an empty 'sessions' array ([]). We will generate detailed sessions later.
-    
-    Output JSON: { "weeks": [{ "weekNumber": int, "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "phase": "string", "goal": "string", "sessions": [] }], "tips": ["string"] }
-  `;
-
-    // CHANGED: Use Pro model primarily for higher accuracy, with search enabled.
-    const response = await generateWithFallback(MODEL_COMPLEX, MODEL_FAST, {
-        contents: prompt,
-        config: {
-            temperature: 0.2,
-            // tools: [{googleSearch: {}}], // Removed to fix JSON mime type error
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    weeks: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                weekNumber: { type: Type.INTEGER },
-                                startDate: { type: Type.STRING },
-                                endDate: { type: Type.STRING },
-                                phase: { type: Type.STRING },
-                                goal: { type: Type.STRING },
-                                sessions: {
-                                    type: Type.ARRAY,
-                                    items: {
-                                        type: Type.OBJECT,
-                                        properties: {
-                                            day: { type: Type.STRING },
-                                            subject: { type: Type.STRING },
-                                            topic: { type: Type.STRING },
-                                            technique: { type: Type.STRING },
-                                            durationMinutes: { type: Type.NUMBER },
-                                            startTime: { type: Type.STRING }
-                                        },
-                                        required: ["day", "subject", "topic"]
-                                    }
-                                }
-                            },
-                            required: ["weekNumber", "startDate", "endDate", "phase", "goal", "sessions"]
-                        }
-                    },
-                    tips: { type: Type.ARRAY, items: { type: Type.STRING } }
-                }
-            }
-        }
-    });
-
-    const text = response.text;
-    if (!text) throw new Error("No response from AI");
-    
-    const data = JSON.parse(text.trim());
-
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sourceUrls = groundingChunks
-        .map((chunk: any) => chunk.web?.uri)
-        .filter((uri: string | undefined): uri is string => !!uri);
-
-    return {
-        weeks: data.weeks,
-        tips: data.tips,
-        sourceUrls: [...new Set(sourceUrls)]
-    };
-}
+// (Removed generateRoadmapBatch as it is no longer needed with the new AI Syllabus Fetching strategy)
 
 // --- GLOBAL CACHE FUNCTIONS ---
 
@@ -540,7 +643,7 @@ async function getGlobalCachedPlan(grade: string, subjects: Subject[], examDate:
             return docSnap.data() as StudyPlan;
         }
     } catch (e) {
-        console.warn("Global cache fetch failed", e);
+        handleFirestoreError(e, OperationType.GET, 'study_plans');
     }
     return null;
 }
@@ -559,67 +662,7 @@ async function saveGlobalCachedPlan(plan: StudyPlan, grade: string, subjects: Su
         });
         console.log("💾 Saved plan to global Firestore cache.");
     } catch (e) {
-        console.warn("Global cache save failed", e);
-    }
-}
-
-// --- SYLLABUS EXTRACTION & AUTO-SAVE ---
-async function extractAndSaveSyllabus(
-    weeks: any[], 
-    grade: string, 
-    language: string,
-    allSubjects: Subject[]
-) {
-    if (!db) return;
-    
-    const extractedSyllabi: Record<string, Set<string>> = {};
-    
-    // Initialize sets
-    allSubjects.forEach(s => extractedSyllabi[s.name] = new Set());
-
-    weeks.forEach(week => {
-        if (!week.goal) return;
-        // Expected format: "History: Unit 1 | Science: Unit 2"
-        const parts = week.goal.split('|');
-        parts.forEach((part: string) => {
-            const colonIndex = part.indexOf(':');
-            if (colonIndex > -1) {
-                const subjectName = part.substring(0, colonIndex).trim();
-                const topic = part.substring(colonIndex + 1).trim();
-                
-                // Fuzzy match subject
-                const matchedSubject = allSubjects.find(s => 
-                    s.name.toLowerCase() === subjectName.toLowerCase() ||
-                    subjectName.toLowerCase().includes(s.name.toLowerCase())
-                );
-
-                if (matchedSubject) {
-                    extractedSyllabi[matchedSubject.name].add(topic);
-                }
-            }
-        });
-    });
-
-    const safeGrade = createDocId(grade);
-    
-    for (const subject of allSubjects) {
-        const topics = Array.from(extractedSyllabi[subject.name] || []);
-        if (topics.length > 0) {
-            const safeSubject = createDocId(normalizeSubject(subject.name));
-            const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'syllabus', 'main');
-            
-            try {
-                // Only save if it doesn't exist to prevent overwriting full syllabi with partials
-                const docSnap = await getDoc(docRef);
-                if (!docSnap.exists()) {
-                     const units = topics.map(t => ({ unit: t }));
-                     await setDoc(docRef, { units, updatedAt: new Date().toISOString(), source: 'auto-extracted' });
-                     console.log(`💾 Auto-saved extracted syllabus for ${subject.name}`);
-                }
-            } catch (e) {
-                console.warn("Auto-save syllabus failed", e);
-            }
-        }
+        handleFirestoreError(e, OperationType.WRITE, 'study_plans');
     }
 }
 
@@ -667,122 +710,41 @@ export const generateStudyPlan = async (
       if (cachedData) {
           stopProgressSimulation();
           updateProgress(100);
-          return JSON.parse(cachedData);
+          const parsed = JSON.parse(cachedData);
+          return { ...parsed, source: 'cache' };
       }
 
       updateProgress(5);
-      smoothProgressTo(20);
+      smoothProgressTo(80);
 
-      // --- STRATEGY 0: CHECK GLOBAL FIRESTORE CACHE (New Feature) ---
-      // Especially important for Grade 9+ as requested, but applied generally for efficiency
-      const globalPlan = await getGlobalCachedPlan(grade, subjects, routine.examDate, language);
-      if (globalPlan) {
-          stopProgressSimulation();
-          updateProgress(100);
-          // Save to local cache for faster next load
-          try { localStorage.setItem(cacheKey, JSON.stringify(globalPlan)); } catch (e) {}
-          return globalPlan;
+      let relevantSyllabi: { name: string, units: SyllabusUnit[] }[] = [];
+
+      // --- STRATEGY 1: CHECK GLOBAL FIRESTORE CACHE ---
+      if (relevantSyllabi.length === 0) {
+          const globalPlan = await getGlobalCachedPlan(grade, subjects, routine.examDate, language);
+          if (globalPlan) {
+              stopProgressSimulation();
+              updateProgress(100);
+              try { localStorage.setItem(cacheKey, JSON.stringify(globalPlan)); } catch (e) {}
+              return { ...globalPlan, source: 'database' };
+          }
       }
 
-      // --- STRATEGY 1: TRY DATABASE (Firebase -> Local) (0 Credits) ---
-      // const dbPlan = await generateFromDB(subjects, grade, routine.examDate, language);
-      const dbPlan: { weeks: any[], tips: string[], isLocal: boolean } | null = null; // Force AI generation as requested by user
+      // --- STRATEGY 2: TRY DATABASE (Firebase -> Local -> AI Search) ---
+      let dbPlan = null;
+      dbPlan = await generateFromDB(subjects, grade, routine.examDate, language, updateProgress, relevantSyllabi);
       
-      if (dbPlan !== null) {
-        stopProgressSimulation();
-        updateProgress(100);
-        
-        const plan: StudyPlan = {
-            examDate: routine.examDate,
-            weeks: (dbPlan as { weeks: any[], tips: string[], isLocal: boolean }).weeks,
-            tips: (dbPlan as { weeks: any[], tips: string[], isLocal: boolean }).tips,
-            sourceUrls: []
-        };
-        
-        // Save to cache
-        try { localStorage.setItem(cacheKey, JSON.stringify(plan)); } catch (e) {}
-        return plan;
-      }
-
-      // --- STRATEGY 2: AI FALLBACK (Use Pro Model w/ Search) ---
-      console.log("DB miss. Using AI (Pro Model w/ Search)...");
-      
-      const subjectsStr = subjects.map(s => `${s.name} (${s.difficulty})`).join(', ');
-      
-      const langContext = language === 'si' 
-        ? "Sinhala language. Use Sinhala terms." 
-        : "English language.";
-
-      const today = new Date();
-      const exam = new Date(routine.examDate);
-      const diffTime = Math.abs(exam.getTime() - today.getTime());
-      const daysUntilExam = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      const currentFormattedDate = today.toISOString().split('T')[0];
-
-      let examContextInstruction = `Target: Grade ${grade}`;
-
-      // Context analysis done
-      stopProgressSimulation();
-      updateProgress(25);
-
-      const batchParams = {
-          grade,
-          subjectsStr,
-          restDay,
-          examContextInstruction,
-          langContext,
-          currentFormattedDate,
-          examDate: routine.examDate
-      };
-
-      let mergedWeeks: any[] = [];
-      let mergedTips: string[] = [];
-      let mergedSourceUrls: string[] = [];
-
-      if (daysUntilExam > 140) { 
-          // Split into batches to avoid output token limits
-          const midTime = today.getTime() + (diffTime / 2);
-          const midDateStr = new Date(midTime).toISOString().split('T')[0];
-          const weeksInFirstBatch = Math.ceil((midTime - today.getTime()) / (1000 * 60 * 60 * 24 * 7));
-
-          smoothProgressTo(55);
-          const batch1 = await generateRoadmapBatch(1, currentFormattedDate, midDateStr, true, batchParams);
-          
-          stopProgressSimulation();
-          updateProgress(60);
-          mergedWeeks = [...batch1.weeks];
-          mergedTips = [...batch1.tips];
-          mergedSourceUrls = [...new Set([...mergedSourceUrls, ...(batch1.sourceUrls || [])])];
-
-          smoothProgressTo(65);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          smoothProgressTo(90);
-          const lastWeekNum = batch1.weeks[batch1.weeks.length - 1]?.weekNumber || weeksInFirstBatch;
-          const batch2 = await generateRoadmapBatch(lastWeekNum + 1, midDateStr, routine.examDate, false, batchParams);
-          
-          stopProgressSimulation();
-          updateProgress(95);
-          mergedWeeks = [...mergedWeeks, ...batch2.weeks];
-          mergedSourceUrls = [...new Set([...mergedSourceUrls, ...(batch2.sourceUrls || [])])];
-
-      } else {
-          smoothProgressTo(85); 
-          const batch = await generateRoadmapBatch(1, currentFormattedDate, routine.examDate, true, batchParams);
-          stopProgressSimulation();
-          updateProgress(90);
-          mergedWeeks = batch.weeks;
-          mergedTips = batch.tips;
-          mergedSourceUrls = [...new Set([...mergedSourceUrls, ...(batch.sourceUrls || [])])];
+      if (!dbPlan) {
+          throw new Error("Failed to generate study plan. Could not fetch syllabus data.");
       }
 
       // Generate first week sessions specifically to respect routine
-      if (mergedWeeks.length > 0) {
+      if (dbPlan.weeks.length > 0) {
           stopProgressSimulation();
           updateProgress(92);
           try {
               const firstWeekSessions = await generateWeeklySessions(
-                  mergedWeeks[0],
+                  dbPlan.weeks[0],
                   subjects,
                   hoursPerDay,
                   grade,
@@ -791,32 +753,28 @@ export const generateStudyPlan = async (
                   routine,
                   restDay
               );
-              mergedWeeks[0].sessions = firstWeekSessions;
+              dbPlan.weeks[0].sessions = firstWeekSessions;
           } catch (e) {
               console.warn("Failed to generate initial week sessions", e);
           }
       }
 
+      stopProgressSimulation();
+      updateProgress(100);
+      
       const plan: StudyPlan = {
-        examDate: routine.examDate,
-        weeks: mergedWeeks,
-        tips: mergedTips,
-        sourceUrls: mergedSourceUrls,
+          examDate: routine.examDate,
+          weeks: dbPlan.weeks,
+          tips: dbPlan.tips,
+          sourceUrls: [],
+          source: 'ai'
       };
-
+      
       // NEW: Save to Global Firestore Cache
       await saveGlobalCachedPlan(plan, grade, subjects, routine.examDate, language);
 
-      // NEW: Extract and Save Syllabus Units for future "Strategy 1" usage
-      await extractAndSaveSyllabus(mergedWeeks, grade, language, subjects);
-
-      try {
-        localStorage.setItem(cacheKey, JSON.stringify(plan));
-      } catch (e) {
-        console.warn("Cache full");
-      }
-
-      updateProgress(100);
+      // Save to cache
+      try { localStorage.setItem(cacheKey, JSON.stringify(plan)); } catch (e) {}
       return plan;
   } finally {
       stopProgressSimulation();
@@ -839,13 +797,12 @@ export const generateWeeklySessions = async (
     if (apiKeys.length === 0) throw new Error("API Key is missing");
 
     // Add a small delay to prevent rate limiting when users click fast
-    await sleep(1000);
+    await sleep(500);
 
     const busySlotsStr = busySlots.map(b => `${b.day}: ${b.startTime}-${b.endTime}`).join(', ');
-    const langContext = language === 'si' ? "Sinhala" : "English";
+    const langContext = "Sinhala";
 
     const prompt = `
-        You are an expert curriculum developer for the National Institute of Education (NIE) in Sri Lanka.
         Create DAILY SCHEDULE for **Week ${targetWeek.weekNumber}**.
         Grade: ${grade}
         Goal: ${targetWeek.goal}
@@ -857,9 +814,9 @@ export const generateWeeklySessions = async (
         Bed: ${routine.bedTime}
         
         **CRITICAL RULES:**
-        1. Do NOT invent or guess topics. Use the exact Sri Lankan local syllabus topics that align with the Goal.
+        1. Use Sri Lankan syllabus topics matching the Goal.
         2. Output JSON Array of sessions.
-        3. **Day Names:** Use standard English day names (Monday, Tuesday, etc.) or standard Sinhala day names (සඳුදා, අඟහරුවාදා, etc.) exactly as they appear in a calendar.
+        3. **Day Names:** Use standard English or Sinhala day names.
         
         Language: ${langContext}.
     `;
@@ -913,8 +870,8 @@ export const generateQuiz = async (
 
   // 1. Try to fetch from DB first (Save Credits)
   if (db) {
+    const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'quizzes', docId);
     try {
-        const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'quizzes', docId);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -922,7 +879,7 @@ export const generateQuiz = async (
             return docSnap.data().questions as QuizQuestion[];
         }
     } catch (e) {
-        console.warn("Quiz fetch error", e);
+        handleFirestoreError(e, OperationType.GET, docRef.path);
     }
   }
   
@@ -934,7 +891,7 @@ export const generateQuiz = async (
     Grade: ${grade}
     Subject: ${subject}
     Topic: ${topic} ${subTopic ? '- ' + subTopic : ''}
-    Language: ${language === 'si' ? 'Sinhala' : 'English'}
+    Language: Sinhala
     Difficulty: ${difficulty}
     
     CRITICAL INSTRUCTIONS TO PREVENT ERRORS:
@@ -971,8 +928,8 @@ export const generateQuiz = async (
 
   // 3. Save to DB for next time
   if (db && questions.length > 0) {
+    const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'quizzes', docId);
     try {
-        const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'quizzes', docId);
         await setDoc(docRef, { 
             questions,
             grade,
@@ -984,7 +941,7 @@ export const generateQuiz = async (
         });
         console.log(`💾 Quiz saved to Firebase: ${docRef.path}`);
     } catch (e) {
-        console.warn("Failed to save quiz", e);
+        handleFirestoreError(e, OperationType.WRITE, docRef.path);
     }
   }
 
@@ -993,7 +950,7 @@ export const generateQuiz = async (
 
 export const getStudyAdvice = async (query: string, language: Language): Promise<string> => {
   // Use Pro for advice/tutoring as it requires better reasoning and subject knowledge
-  const context = language === 'si' ? "Answer in Sinhala. Use accurate terminology." : "Answer in English.";
+  const context = "Answer in Sinhala. Use accurate terminology.";
   
   const prompt = `
     You are a helpful and knowledgeable academic tutor and study coach for a student in Sri Lanka. 
@@ -1031,8 +988,8 @@ export const generateFlashcards = async (
 
     // 1. Try to fetch from DB first
     if (db) {
+        const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'flashcards', docId);
         try {
-            const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'flashcards', docId);
             const docSnap = await getDoc(docRef);
     
             if (docSnap.exists()) {
@@ -1040,7 +997,7 @@ export const generateFlashcards = async (
                 return docSnap.data().cards as Flashcard[];
             }
         } catch (e) {
-            console.warn("Flashcard fetch error", e);
+            handleFirestoreError(e, OperationType.GET, docRef.path);
         }
       }
 
@@ -1052,7 +1009,7 @@ export const generateFlashcards = async (
       Grade: ${grade}
       Subject: ${subject}
       Topic: ${topic}
-      Language: ${language === 'si' ? 'Sinhala' : 'English'}
+      Language: Sinhala
       
       CRITICAL INSTRUCTIONS TO PREVENT ERRORS:
       1. NEVER invent or hallucinate facts. All definitions MUST be 100% factually accurate.
@@ -1082,8 +1039,8 @@ export const generateFlashcards = async (
 
     // 3. Save to DB
     if (db && cards.length > 0) {
+        const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'flashcards', docId);
         try {
-            const docRef = doc(db, 'languages', language, 'grades', safeGrade, 'subjects', safeSubject, 'flashcards', docId);
             await setDoc(docRef, { 
                 cards, 
                 grade,
@@ -1094,7 +1051,7 @@ export const generateFlashcards = async (
             });
             console.log(`💾 Flashcards saved to Firebase: ${docRef.path}`);
         } catch (e) {
-            console.warn("Failed to save flashcards", e);
+            handleFirestoreError(e, OperationType.WRITE, docRef.path);
         }
     }
 
@@ -1111,7 +1068,7 @@ export const generateSyllabusList = async (grade: string, subject: string, langu
       Grade: ${grade}
       Subject: ${subject}
       Country: Sri Lanka (NIE Syllabus - nie.lk)
-      Language: ${language === 'si' ? 'Sinhala' : 'English'}
+      Language: Sinhala
       
       CRITICAL INSTRUCTIONS:
       1. Provide the exact, official unit names as per the Sri Lankan local syllabus (National Institute of Education).
@@ -1144,7 +1101,7 @@ export const generateFullUnitPack = async (grade: string, subject: string, unit:
       Grade: ${grade}
       Subject: ${subject}
       Unit: ${unit}
-      Language: ${language === 'si' ? 'Sinhala' : 'English'}
+      Language: Sinhala
       
       Tasks:
       1. Create 10 Multiple Choice Questions (Medium to Hard difficulty) that test deep understanding of the unit.

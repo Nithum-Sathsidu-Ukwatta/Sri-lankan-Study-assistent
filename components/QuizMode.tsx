@@ -92,9 +92,7 @@ export const QuizMode: React.FC<QuizModeProps> = ({ language }) => {
   }[language];
 
   const grades = [
-    "6 ශ්‍රේණිය (Grade 6)", "7 ශ්‍රේණිය (Grade 7)", "8 ශ්‍රේණිය (Grade 8)", 
-    "9 ශ්‍රේණිය (Grade 9)", "10 ශ්‍රේණිය (Grade 10)", "11 ශ්‍රේණිය (Grade 11)",
-    "12 ශ්‍රේණිය (Grade 12)", "13 ශ්‍රේණිය (Grade 13)"
+    "10 ශ්‍රේණිය (Grade 10)"
   ];
 
   const startQuiz = async () => {
@@ -177,10 +175,7 @@ export const QuizMode: React.FC<QuizModeProps> = ({ language }) => {
         </div>
         <h3 className="text-2xl font-bold text-slate-800 mb-2">{timeLeft <= 0 ? t.timesUp : t.finishTitle}</h3>
         <p className="text-slate-600 mb-6 text-lg">
-          {language === 'si' 
-            ? <>ඔබේ ලකුණු: <span className="font-bold text-indigo-600">{questions.length}</span> න් <span className="font-bold text-indigo-600">{score}</span> යි.</>
-            : <>Your Score: <span className="font-bold text-indigo-600">{score}</span> out of <span className="font-bold text-indigo-600">{questions.length}</span></>
-          }
+          <>ඔබේ ලකුණු: <span className="font-bold text-indigo-600">{questions.length}</span> න් <span className="font-bold text-indigo-600">{score}</span> යි.</>
         </p>
         
         <div className="flex gap-4">

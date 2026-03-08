@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "UserUsage": {
+      "title": "User Usage",
+      "description": "Tracks usage tokens for a specific user in a month.",
+      "type": "object",
+      "properties": {
+        "tokens": { "type": "number", "description": "Number of tokens used." },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tokens"]
+    },
+    "GlobalUsage": {
+      "title": "Global Usage",
+      "description": "Tracks global usage tokens for a month.",
+      "type": "object",
+      "properties": {
+        "tokens": { "type": "number", "description": "Total tokens used globally." }
+      },
+      "required": ["tokens"]
+    },
+    "Syllabus": {
+      "title": "Syllabus",
+      "description": "Syllabus content for a specific subject.",
+      "type": "object",
+      "properties": {
+        "units": { "type": "array", "items": { "type": "object" } },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "A collection of quiz questions.",
+      "type": "object",
+      "properties": {
+        "questions": { "type": "array", "items": { "type": "object" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "source": { "type": "string" }
+      }
+    },
+    "Flashcards": {
+      "title": "Flashcards",
+      "description": "A collection of flashcards.",
+      "type": "object",
+      "properties": {
+        "cards": { "type": "array", "items": { "type": "object" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "source": { "type": "string" }
+      }
+    },
+    "StudyPlan": {
+      "title": "Study Plan",
+      "description": "A user's generated study plan.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "plan": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}/usage/{monthKey}": {
+      "schema": "UserUsage",
+      "description": "Monthly usage for a user."
+    },
+    "usage_monthly/{monthKey}": {
+      "schema": "GlobalUsage",
+      "description": "Global monthly usage."
+    },
+    "languages/{language}/grades/{grade}/subjects/{subject}/syllabus/main": {
+      "schema": "Syllabus",
+      "description": "Syllabus data."
+    },
+    "languages/{language}/grades/{grade}/subjects/{subject}/quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "Quiz data."
+    },
+    "languages/{language}/grades/{grade}/subjects/{subject}/flashcards/{flashId}": {
+      "schema": "Flashcards",
+      "description": "Flashcard data."
+    },
+    "study_plans/{planId}": {
+      "schema": "StudyPlan",
+      "description": "User study plans."
+    }
+  }
+}

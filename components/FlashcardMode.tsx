@@ -114,9 +114,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({ language }) => {
                   onChange={(e) => setGrade(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm"
                 >
-                   {["6 ශ්‍රේණිය (Grade 6)", "7 ශ්‍රේණිය (Grade 7)", "8 ශ්‍රේණිය (Grade 8)", 
-                     "9 ශ්‍රේණිය (Grade 9)", "10 ශ්‍රේණිය (Grade 10)", "11 ශ්‍රේණිය (Grade 11)",
-                     "12 ශ්‍රේණිය (Grade 12)", "13 ශ්‍රේණිය (Grade 13)"].map(g => (
+                   {["10 ශ්‍රේණිය (Grade 10)"].map(g => (
                     <option key={g} value={g}>{g}</option>
                   ))}
                 </select>
