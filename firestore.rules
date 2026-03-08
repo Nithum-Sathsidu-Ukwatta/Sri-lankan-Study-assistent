@@ -70,6 +70,11 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    match /languages/{lang}/grades/{grade}/subjects/{sub}/syllabus/{docId} {
+      allow read: if true;
+      allow write: if true; // Allow caching of AI-generated syllabus
+    }
+
     match /languages/{allPaths=**} {
       allow read: if true;
       allow write: if isAdmin();

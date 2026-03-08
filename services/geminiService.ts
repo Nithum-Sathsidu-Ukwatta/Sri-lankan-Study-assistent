@@ -567,7 +567,11 @@ async function generateFromDB(
                         try {
                             await setDoc(docRef, { units: res.units, updatedAt: new Date().toISOString(), source: 'ai-search' });
                         } catch (e) {
-                            handleFirestoreError(e, OperationType.WRITE, docRef.path);
+                            try {
+                                handleFirestoreError(e, OperationType.WRITE, docRef.path);
+                            } catch (err) {
+                                console.warn("Failed to cache syllabus (Permissions/Offline). Continuing...", err);
+                            }
                         }
                     }
                 }

@@ -404,7 +404,14 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ language, points, sp
   }[language];
 
   const grades = [
-    "10 ශ්‍රේණිය (Grade 10)"
+    "6 ශ්‍රේණිය (Grade 6)",
+    "7 ශ්‍රේණිය (Grade 7)",
+    "8 ශ්‍රේණිය (Grade 8)",
+    "9 ශ්‍රේණිය (Grade 9)",
+    "10 ශ්‍රේණිය (Grade 10)",
+    "11 ශ්‍රේණිය (Grade 11)",
+    "12 ශ්‍රේණිය (Grade 12)",
+    "13 ශ්‍රේණිය (Grade 13)"
   ];
 
   const getAvailableExamTargets = () => {
